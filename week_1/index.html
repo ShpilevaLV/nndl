@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Titanic EDA Dashboard - Discover the Key Factor</title>
+    <title>Titanic EDA Dashboard - Find the Key Factor</title>
     
     <!-- Libraries -->
     <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
@@ -66,12 +64,6 @@
             width: 100%;
         }
         
-        .factor-badge {
-            font-size: 1.1rem;
-            padding: 0.5rem 1rem;
-            border-radius: 50px;
-        }
-        
         .hypothesis-section {
             background-color: #e8f4fc;
             border-left: 5px solid var(--secondary-color);
@@ -114,11 +106,6 @@
             border-left: 4px solid var(--secondary-color);
         }
         
-        .tooltip-icon {
-            color: var(--secondary-color);
-            cursor: help;
-        }
-        
         @media (max-width: 768px) {
             .chart-container {
                 height: 300px;
@@ -127,6 +114,18 @@
             .stat-number {
                 font-size: 1.5rem;
             }
+        }
+        
+        .progress {
+            overflow: visible;
+        }
+        
+        .progress-bar span {
+            position: absolute;
+            right: 10px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         }
     </style>
 </head>
@@ -146,21 +145,6 @@
         <div class="row mb-4">
             <!-- Left Column: Data & Controls -->
             <div class="col-lg-4 col-md-12">
-                <!-- Your EDA Prompt -->
-                <div class="hypothesis-section">
-                    <h4><i class="fas fa-bullseye me-2"></i>Your EDA Mission</h4>
-                    <p><strong>Assignment:</strong> "Try to Perform EDA with your own prompt. Figure out the most important factor of die in Titanic based on EDA."</p>
-                    
-                    <div class="mb-3">
-                        <label for="hypothesisInput" class="form-label fw-bold">Your Initial Hypothesis:</label>
-                        <textarea class="form-control" id="hypothesisInput" rows="3" placeholder="What do you think was the main factor determining survival/death on the Titanic? Example: 'I hypothesize that passenger class (Pclass) was the most important factor because...'"></textarea>
-                    </div>
-                    
-                    <button class="btn btn-primary" onclick="updateConclusion()">
-                        <i class="fas fa-lightbulb me-1"></i>Update My Conclusion
-                    </button>
-                </div>
-                
                 <!-- Data Load & Overview Card -->
                 <div class="card eda-card">
                     <div class="card-header d-flex justify-content-between align-items-center">
@@ -255,11 +239,26 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- EDA Cheatsheet Card -->
+                <div class="card eda-card">
+                    <div class="card-header">
+                        <i class="fas fa-clipboard-list me-2"></i>EDA Cheatsheet
+                    </div>
+                    <div class="card-body">
+                        <p class="small"><strong>Univariate Analysis:</strong> Study one variable at a time</p>
+                        <p class="small"><strong>Multivariate Analysis:</strong> Study relationships between variables</p>
+                        <p class="small"><strong>Correlations:</strong> Measure strength of relationships</p>
+                        <p class="small"><strong>Insights:</strong> Form conclusions based on patterns</p>
+                        <hr>
+                        <p class="small text-muted mb-0">Follow the tabs to perform complete EDA</p>
+                    </div>
+                </div>
             </div>
             
             <!-- Right Column: Charts & Analysis -->
             <div class="col-lg-8 col-md-12">
-                <!-- Visualization Tabs -->
+                <!-- Visualization Tabs with Insights -->
                 <div class="card eda-card">
                     <div class="card-header">
                         <ul class="nav nav-tabs card-header-tabs" id="chartTabs" role="tablist">
@@ -276,6 +275,12 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="correlation-tab" data-bs-toggle="tab" data-bs-target="#correlation" type="button" role="tab">
                                     <i class="fas fa-project-diagram me-1"></i>Correlations
+                                </button>
+                            </li>
+                            <!-- Insights Tab -->
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="insights-tab" data-bs-toggle="tab" data-bs-target="#insights" type="button" role="tab">
+                                    <i class="fas fa-lightbulb me-1"></i>Insights
                                 </button>
                             </li>
                         </ul>
@@ -361,82 +366,128 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Key Insights & Conclusion Card -->
-                <div class="card eda-card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-chart-pie me-2"></i>3. EDA Insights & Conclusion</span>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="autoUpdate" checked>
-                            <label class="form-check-label small" for="autoUpdate">Auto-update with filters</label>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <!-- Top Factors Ranking -->
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <h6>Top Factors Affecting Death Rate (Based on Current Analysis)</h6>
-                                <div class="progress mb-2" style="height: 30px;">
-                                    <div class="progress-bar bg-danger" id="factor1Bar" style="width: 0%">Gender</div>
-                                </div>
-                                <div class="progress mb-2" style="height: 25px;">
-                                    <div class="progress-bar bg-warning" id="factor2Bar" style="width: 0%">Passenger Class</div>
-                                </div>
-                                <div class="progress mb-2" style="height: 20px;">
-                                    <div class="progress-bar bg-info" id="factor3Bar" style="width: 0%">Age</div>
-                                </div>
-                                <div class="progress" style="height: 15px;">
-                                    <div class="progress-bar bg-secondary" id="factor4Bar" style="width: 0%">Fare</div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Your Conclusion Section -->
-                        <div class="conclusion-box">
-                            <h5><i class="fas fa-flag-checkered me-2"></i>Your EDA Conclusion</h5>
-                            <div id="conclusionPlaceholder">
-                                <p class="text-muted"><i>Your conclusion will appear here after you load data, explore charts, and click "Update My Conclusion".</i></p>
-                            </div>
-                            <div id="userConclusion" style="display: none;">
-                                <h6>My Hypothesis:</h6>
-                                <p id="conclusionHypothesis" class="fst-italic"></p>
-                                
-                                <h6>Key Evidence from My EDA:</h6>
-                                <ul id="conclusionEvidence" class="mb-3"></ul>
-                                
-                                <h6>My Verdict on the Most Important Factor of Death:</h6>
-                                <div class="alert alert-dark" role="alert">
-                                    <h4 id="conclusionVerdict" class="mb-0 text-center"></h4>
+                            
+                            <!-- Insights Tab -->
+                            <div class="tab-pane fade" id="insights" role="tabpanel">
+                                <!-- Your Hypothesis Section -->
+                                <div class="hypothesis-section mb-4">
+                                    <h5><i class="fas fa-bullseye me-2"></i>Your EDA Hypothesis</h5>
+                                    <p><strong>Assignment:</strong> "Try to Perform EDA with your own prompt. Figure out the most important factor of die in Titanic based on EDA."</p>
+                                    
+                                    <div class="mb-3">
+                                        <label for="hypothesisInput" class="form-label fw-bold">Your Initial Hypothesis:</label>
+                                        <textarea class="form-control" id="hypothesisInput" rows="3" placeholder="What do you think was the main factor determining survival/death on the Titanic? Example: 'I hypothesize that passenger class (Pclass) was the most important factor because...'"></textarea>
+                                    </div>
+                                    
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <button class="btn btn-primary" onclick="updateConclusion()">
+                                            <i class="fas fa-lightbulb me-1"></i>Update My Conclusion
+                                        </button>
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="autoUpdate" checked>
+                                            <label class="form-check-label small" for="autoUpdate">Auto-update with filters</label>
+                                        </div>
+                                    </div>
                                 </div>
                                 
-                                <div class="text-center mt-3">
-                                    <button class="btn btn-outline-primary btn-sm" onclick="exportConclusion()">
-                                        <i class="fas fa-download me-1"></i>Export as Text
-                                    </button>
-                                    <button class="btn btn-outline-success btn-sm ms-2" onclick="shareAnalysis()">
-                                        <i class="fas fa-share-alt me-1"></i>Share Analysis
-                                    </button>
+                                <!-- Top Factors Ranking -->
+                                <div class="row mb-4">
+                                    <div class="col-12">
+                                        <h5><i class="fas fa-chart-line me-2"></i>Factor Impact Ranking</h5>
+                                        <p class="text-muted small">Based on your current data exploration, here's how different factors affect death rates:</p>
+                                        
+                                        <div class="progress mb-2" style="height: 30px;">
+                                            <div class="progress-bar bg-danger" id="factor1Bar" style="width: 0%">
+                                                <span>Gender (0%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress mb-2" style="height: 25px;">
+                                            <div class="progress-bar bg-warning" id="factor2Bar" style="width: 0%">
+                                                <span>Passenger Class (0%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress mb-2" style="height: 20px;">
+                                            <div class="progress-bar bg-info" id="factor3Bar" style="width: 0%">
+                                                <span>Age (0%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress mb-3" style="height: 15px;">
+                                            <div class="progress-bar bg-secondary" id="factor4Bar" style="width: 0%">
+                                                <span>Fare (0%)</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Quick Insights -->
-                        <div class="row mt-4">
-                            <div class="col-md-6">
-                                <div class="p-3 border rounded bg-light">
-                                    <h6><i class="fas fa-fire text-danger me-2"></i>Highest Death Rate Group</h6>
-                                    <p id="highestDeathGroup" class="mb-1">Loading data...</p>
-                                    <small class="text-muted">The passenger group with the lowest survival chance</small>
+                                
+                                <!-- Your Conclusion Section -->
+                                <div class="conclusion-box mb-4">
+                                    <h5><i class="fas fa-flag-checkered me-2"></i>Your EDA Conclusion</h5>
+                                    <div id="conclusionPlaceholder">
+                                        <p class="text-muted"><i>Your conclusion will appear here after you load data, explore charts, and click "Update My Conclusion".</i></p>
+                                    </div>
+                                    <div id="userConclusion" style="display: none;">
+                                        <h6>My Hypothesis:</h6>
+                                        <p id="conclusionHypothesis" class="fst-italic"></p>
+                                        
+                                        <h6>Key Evidence from My EDA:</h6>
+                                        <ul id="conclusionEvidence" class="mb-3"></ul>
+                                        
+                                        <h6>My Verdict on the Most Important Factor of Death:</h6>
+                                        <div class="alert alert-dark" role="alert">
+                                            <h4 id="conclusionVerdict" class="mb-0 text-center"></h4>
+                                        </div>
+                                        
+                                        <div class="text-center mt-3">
+                                            <button class="btn btn-outline-primary btn-sm" onclick="exportConclusion()">
+                                                <i class="fas fa-download me-1"></i>Export as Text
+                                            </button>
+                                            <button class="btn btn-outline-success btn-sm ms-2" onclick="shareAnalysis()">
+                                                <i class="fas fa-share-alt me-1"></i>Share Analysis
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="p-3 border rounded bg-light">
-                                    <h6><i class="fas fa-shield-alt text-success me-2"></i>Lowest Death Rate Group</h6>
-                                    <p id="lowestDeathGroup" class="mb-1">Loading data...</p>
-                                    <small class="text-muted">The passenger group with the highest survival chance</small>
+                                
+                                <!-- Quick Insights Cards -->
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="p-3 border rounded bg-light h-100">
+                                            <h6><i class="fas fa-fire text-danger me-2"></i>Highest Death Rate Group</h6>
+                                            <p id="highestDeathGroup" class="mb-1 fw-bold">Loading data...</p>
+                                            <small class="text-muted">The passenger group with the lowest survival chance</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="p-3 border rounded bg-light h-100">
+                                            <h6><i class="fas fa-shield-alt text-success me-2"></i>Lowest Death Rate Group</h6>
+                                            <p id="lowestDeathGroup" class="mb-1 fw-bold">Loading data...</p>
+                                            <small class="text-muted">The passenger group with the highest survival chance</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Additional Stats -->
+                                <div class="row mt-4">
+                                    <div class="col-12">
+                                        <div class="p-3 border rounded">
+                                            <h6><i class="fas fa-info-circle me-2"></i>Current Analysis Status</h6>
+                                            <div class="row text-center">
+                                                <div class="col-4">
+                                                    <div class="stat-number" id="currentTotalPassengers">--</div>
+                                                    <small>Passengers in View</small>
+                                                </div>
+                                                <div class="col-4">
+                                                    <div class="stat-number" id="currentDeathRate">--%</div>
+                                                    <small>Current Death Rate</small>
+                                                </div>
+                                                <div class="col-4">
+                                                    <div class="stat-number" id="currentSurvivalRate">--%</div>
+                                                    <small>Current Survival Rate</small>
+                                                </div>
+                                            </div>
+                                            <p class="small text-muted mt-2 mb-0" id="lastUpdated">Analysis not yet performed</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -449,7 +500,7 @@
         <footer class="mt-4 mb-5 text-center text-muted">
             <p class="mb-1">Titanic EDA Dashboard | Deploy on GitHub Pages | Dataset: Titanic train.csv</p>
             <p class="small">
-                <span id="lastUpdated">Analysis not yet performed</span> | 
+                <span id="lastUpdatedTime">Analysis not yet performed</span> | 
                 <a href="javascript:void(0)" onclick="resetDashboard()" class="text-decoration-none">
                     <i class="fas fa-redo me-1"></i>Reset Dashboard
                 </a>
