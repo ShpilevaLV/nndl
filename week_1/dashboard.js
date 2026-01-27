@@ -143,15 +143,20 @@ function updateDataStatus() {
     loadBtn.innerHTML = '<i class="fas fa-check me-1"></i>Data Loaded';
 }
 
-// Update quick statistics
 function updateQuickStats() {
     const totalPassengers = titanicData.length;
     const survivors = titanicData.filter(p => p.Survived === 1).length;
+    const deaths = totalPassengers - survivors;
     const survivalRate = ((survivors / totalPassengers) * 100).toFixed(1);
-    const deathRate = (100 - parseFloat(survivalRate)).toFixed(1);
+    const deathRate = ((deaths / totalPassengers) * 100).toFixed(1);
     
     document.getElementById('totalPassengers').textContent = totalPassengers;
     document.getElementById('survivalRate').textContent = `${survivalRate}%`;
+    
+    // Update overview stats
+    document.getElementById('overviewPassengers').textContent = totalPassengers;
+    document.getElementById('overviewSurvived').textContent = `${survivalRate}%`;
+    document.getElementById('overviewDied').textContent = `${deathRate}%`;
     
     document.getElementById('quickStats').style.display = 'flex';
 }
@@ -242,15 +247,17 @@ function applyFilters() {
     }
 }
 
-// Update filter statistics
+// Update filter statistics (новый вариант с отображением количества пассажиров)
 function updateFilterStats() {
     const filterStats = document.getElementById('filterStats');
     const deathRateElem = document.getElementById('deathRateFilter');
     const survivalRateElem = document.getElementById('survivalRateFilter');
+    const filteredPassengersElem = document.getElementById('filteredPassengers');
     
     if (filteredData.length === 0) {
         deathRateElem.textContent = '0%';
         survivalRateElem.textContent = '0%';
+        filteredPassengersElem.textContent = '0';
         filterStats.style.display = 'none';
         return;
     }
@@ -264,6 +271,7 @@ function updateFilterStats() {
     
     deathRateElem.textContent = `${deathRate}%`;
     survivalRateElem.textContent = `${survivalRate}%`;
+    filteredPassengersElem.textContent = totalFiltered;
     
     // Color coding based on death rate
     deathRateElem.className = parseFloat(deathRate) > 70 ? 'text-danger fw-bold fs-4' : 
@@ -331,8 +339,22 @@ function updateTopGroups() {
     }
 }
 
-// Create all visualization charts
 function createAllCharts() {
+    // Check screen size to adjust chart height
+    const screenWidth = window.innerWidth;
+    let chartHeight = 380;
+    
+    if (screenWidth < 768) {
+        chartHeight = 280;
+    } else if (screenWidth < 992) {
+        chartHeight = 320;
+    }
+    
+    // Update CSS variable or directly set heights
+    document.querySelectorAll('.chart-container').forEach(container => {
+        container.style.height = `${chartHeight}px`;
+    });
+    
     createGenderChart();
     createClassChart();
     createAgeChart();
@@ -344,6 +366,14 @@ function createAllCharts() {
     createImportanceChart();
     updateFactorRanking();
 }
+
+// Add responsive chart resizing on window resize
+window.addEventListener('resize', function() {
+    if (titanicData.length > 0) {
+        createAllCharts();
+    }
+});
+
 
 // Chart 1: Death rate by gender
 function createGenderChart() {
