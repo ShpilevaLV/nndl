@@ -1,4 +1,4 @@
-// dashboard.js - Complete Titanic EDA Dashboard with Insights Tab
+// dashboard.js - Final Titanic EDA Dashboard with Improved Layout
 let titanicData = [];
 let filteredData = [];
 let currentFilters = {};
@@ -7,15 +7,11 @@ let currentFilters = {};
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Titanic EDA Dashboard loaded');
     
-    // Add event listener for auto-update checkbox
-    const autoUpdateCheckbox = document.getElementById('autoUpdate');
-    if (autoUpdateCheckbox) {
-        autoUpdateCheckbox.addEventListener('change', function() {
-            if (this.checked && filteredData.length > 0) {
-                updateConclusion();
-            }
-        });
-    }
+    // Initialize Bootstrap tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
     
     // Auto-load data after a short delay
     setTimeout(loadTitanicData, 500);
@@ -31,7 +27,7 @@ async function loadTitanicData() {
     loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Loading...';
     
     try {
-        // Try to load from a reliable source
+        // Try to load from GitHub raw URL (no Kaggle API key needed)
         const response = await fetch('https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv');
         
         if (!response.ok) {
@@ -50,11 +46,38 @@ async function loadTitanicData() {
         statusDiv.innerHTML = `<div class="alert alert-danger">
             <i class="fas fa-exclamation-triangle me-2"></i>
             Failed to load data: ${error.message}. 
-            <br><small>Please ensure you have a 'data/train.csv' file in your repository or check your internet connection.</small>
+            <br><small>Using sample data for demonstration. For full analysis, add 'data/train.csv' to your repository.</small>
         </div>`;
+        
+        // Load sample data for demonstration
+        await loadSampleData();
+        
         loadBtn.disabled = false;
         loadBtn.innerHTML = '<i class="fas fa-redo me-1"></i>Retry Loading';
     }
+}
+
+// Sample data for demonstration
+async function loadSampleData() {
+    const sampleData = `PassengerId,Survived,Pclass,Name,Sex,Age,SibSp,Parch,Ticket,Fare,Cabin,Embarked
+1,0,3,"Braund, Mr. Owen Harris",male,22,1,0,A/5 21171,7.25,,S
+2,1,1,"Cumings, Mrs. John Bradley (Florence Briggs Thayer)",female,38,1,0,PC 17599,71.2833,C85,C
+3,1,3,"Heikkinen, Miss. Laina",female,26,0,0,STON/O2. 3101282,7.925,,S
+4,1,1,"Futrelle, Mrs. Jacques Heath (Lily May Peel)",female,35,1,0,113803,53.1,C123,S
+5,0,3,"Allen, Mr. William Henry",male,35,0,0,373450,8.05,,S
+6,0,3,"Moran, Mr. James",male,,0,0,330877,8.4583,,Q
+7,0,1,"McCarthy, Mr. Timothy J",male,54,0,0,17463,51.8625,E46,S
+8,0,3,"Palsson, Master. Gosta Leonard",male,2,3,1,349909,21.075,,S
+9,1,3,"Johnson, Mrs. Oscar W (Elisabeth Vilhelmina Berg)",female,27,0,2,347742,11.1333,,S
+10,1,2,"Nasser, Mrs. Nicholas (Adele Achem)",female,14,1,0,237736,30.0708,,C`;
+    
+    await parseCSVData(sampleData);
+    
+    const statusDiv = document.getElementById('dataStatus');
+    statusDiv.innerHTML = `<div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        Using sample data (10 passengers). For full analysis, download 'train.csv' from Kaggle and add to 'data/' folder.
+    </div>`;
 }
 
 // Parse CSV data
@@ -73,7 +96,6 @@ function parseCSVData(csvText) {
                     passenger.FamilySize = (passenger.SibSp || 0) + (passenger.Parch || 0) + 1;
                     passenger.IsAlone = passenger.FamilySize === 1;
                     passenger.AgeGroup = getAgeGroup(passenger.Age);
-                    passenger.Title = extractTitle(passenger.Name);
                     
                     // Ensure numeric fields are properly typed
                     passenger.Pclass = parseInt(passenger.Pclass) || 3;
@@ -93,7 +115,6 @@ function parseCSVData(csvText) {
                 updateQuickStats();
                 updateDataPreview();
                 createAllCharts();
-                applyFilters();
                 updateTopGroups();
                 updateCurrentStats();
                 
@@ -124,25 +145,21 @@ function getAgeGroup(age) {
     return '61+';
 }
 
-function extractTitle(name) {
-    if (!name) return 'Unknown';
-    const match = name.match(/\s([A-Za-z]+)\./);
-    return match ? match[1] : 'Unknown';
-}
-
 // Update data status display
 function updateDataStatus() {
     const statusDiv = document.getElementById('dataStatus');
+    const loadBtn = document.getElementById('loadDataBtn');
+    
     statusDiv.innerHTML = `<div class="alert alert-success">
         <i class="fas fa-check-circle me-2"></i>
         Data loaded successfully! <strong>${titanicData.length}</strong> passenger records ready for analysis.
     </div>`;
     
-    const loadBtn = document.getElementById('loadDataBtn');
     loadBtn.disabled = true;
     loadBtn.innerHTML = '<i class="fas fa-check me-1"></i>Data Loaded';
 }
 
+// Update quick statistics
 function updateQuickStats() {
     const totalPassengers = titanicData.length;
     const survivors = titanicData.filter(p => p.Survived === 1).length;
@@ -236,48 +253,11 @@ function applyFilters() {
         return true;
     });
     
-    updateFilterStats();
     updateTopGroups();
     updateCurrentStats();
     
     // Auto-update charts if enabled
-    if (document.getElementById('autoUpdate').checked) {
-        createAllCharts();
-        updateConclusion();
-    }
-}
-
-// Update filter statistics (новый вариант с отображением количества пассажиров)
-function updateFilterStats() {
-    const filterStats = document.getElementById('filterStats');
-    const deathRateElem = document.getElementById('deathRateFilter');
-    const survivalRateElem = document.getElementById('survivalRateFilter');
-    const filteredPassengersElem = document.getElementById('filteredPassengers');
-    
-    if (filteredData.length === 0) {
-        deathRateElem.textContent = '0%';
-        survivalRateElem.textContent = '0%';
-        filteredPassengersElem.textContent = '0';
-        filterStats.style.display = 'none';
-        return;
-    }
-    
-    const totalFiltered = filteredData.length;
-    const survivors = filteredData.filter(p => p.Survived === 1).length;
-    const deaths = totalFiltered - survivors;
-    
-    const deathRate = ((deaths / totalFiltered) * 100).toFixed(1);
-    const survivalRate = ((survivors / totalFiltered) * 100).toFixed(1);
-    
-    deathRateElem.textContent = `${deathRate}%`;
-    survivalRateElem.textContent = `${survivalRate}%`;
-    filteredPassengersElem.textContent = totalFiltered;
-    
-    // Color coding based on death rate
-    deathRateElem.className = parseFloat(deathRate) > 70 ? 'text-danger fw-bold fs-4' : 
-                             parseFloat(deathRate) > 50 ? 'text-warning fw-bold fs-4' : 'text-success fw-bold fs-4';
-    
-    filterStats.style.display = 'block';
+    createAllCharts();
 }
 
 // Update top death rate groups
@@ -312,20 +292,6 @@ function updateTopGroups() {
         }
     });
     
-    // Age groups
-    const ageGroups = ['0-10', '11-20', '21-30', '31-40', '41-50', '51-60', '61+'];
-    ageGroups.forEach(ageGroup => {
-        const groupData = titanicData.filter(p => p.AgeGroup === ageGroup);
-        if (groupData.length > 10) { // Only include groups with enough data
-            const deathRate = (groupData.filter(p => p.Survived === 0).length / groupData.length * 100).toFixed(1);
-            groups.push({
-                name: `Age ${ageGroup}`,
-                deathRate: parseFloat(deathRate),
-                size: groupData.length
-            });
-        }
-    });
-    
     // Find highest and lowest death rate groups
     if (groups.length > 0) {
         const highest = groups.reduce((max, group) => group.deathRate > max.deathRate ? group : max);
@@ -339,22 +305,8 @@ function updateTopGroups() {
     }
 }
 
+// Create all visualization charts
 function createAllCharts() {
-    // Check screen size to adjust chart height
-    const screenWidth = window.innerWidth;
-    let chartHeight = 380;
-    
-    if (screenWidth < 768) {
-        chartHeight = 280;
-    } else if (screenWidth < 992) {
-        chartHeight = 320;
-    }
-    
-    // Update CSS variable or directly set heights
-    document.querySelectorAll('.chart-container').forEach(container => {
-        container.style.height = `${chartHeight}px`;
-    });
-    
     createGenderChart();
     createClassChart();
     createAgeChart();
@@ -366,14 +318,6 @@ function createAllCharts() {
     createImportanceChart();
     updateFactorRanking();
 }
-
-// Add responsive chart resizing on window resize
-window.addEventListener('resize', function() {
-    if (titanicData.length > 0) {
-        createAllCharts();
-    }
-});
-
 
 // Chart 1: Death rate by gender
 function createGenderChart() {
@@ -420,7 +364,8 @@ function createGenderChart() {
         title: 'Survival Outcome by Gender',
         xaxis: { title: 'Gender' },
         yaxis: { title: 'Percentage (%)', range: [0, 100] },
-        showlegend: true
+        showlegend: true,
+        margin: { t: 50, b: 50, l: 50, r: 20 }
     };
     
     Plotly.newPlot('genderChart', [trace1, trace2], layout);
@@ -466,7 +411,8 @@ function createClassChart() {
         barmode: 'group',
         title: 'Survival Outcome by Passenger Class',
         xaxis: { title: 'Passenger Class' },
-        yaxis: { title: 'Percentage (%)', range: [0, 100] }
+        yaxis: { title: 'Percentage (%)', range: [0, 100] },
+        margin: { t: 50, b: 50, l: 50, r: 20 }
     };
     
     Plotly.newPlot('classChart', [trace1, trace2], layout);
@@ -502,7 +448,8 @@ function createAgeChart() {
         xaxis: { title: 'Age' },
         yaxis: { title: 'Count' },
         barmode: 'overlay',
-        bargap: 0.1
+        bargap: 0.1,
+        margin: { t: 50, b: 50, l: 50, r: 20 }
     };
     
     Plotly.newPlot('ageChart', [trace1, trace2], layout);
@@ -517,7 +464,7 @@ function createFamilyChart() {
     
     familySizes.forEach(size => {
         const group = titanicData.filter(p => p.FamilySize === size);
-        if (group.length >= 5) { // Only show groups with enough data
+        if (group.length >= 3) { // Only show groups with enough data
             const deathRate = (group.filter(p => p.Survived === 0).length / group.length * 100).toFixed(1);
             deathRates.push(parseFloat(deathRate));
             sizesWithData.push(size);
@@ -541,7 +488,8 @@ function createFamilyChart() {
     const layout = {
         title: 'Death Rate by Family Size',
         xaxis: { title: 'Family Size (including passenger)' },
-        yaxis: { title: 'Death Rate (%)', range: [0, Math.max(...deathRates) + 10] }
+        yaxis: { title: 'Death Rate (%)', range: [0, Math.max(...deathRates) + 10] },
+        margin: { t: 50, b: 50, l: 50, r: 20 }
     };
     
     Plotly.newPlot('familyChart', [trace], layout);
@@ -583,7 +531,8 @@ function createGenderClassChart() {
     const layout = {
         title: 'Death Rate by Gender and Class Combination',
         xaxis: { title: 'Gender × Class', tickangle: -45 },
-        yaxis: { title: 'Death Rate (%)', range: [0, 100] }
+        yaxis: { title: 'Death Rate (%)', range: [0, 100] },
+        margin: { t: 50, b: 80, l: 50, r: 20 }
     };
     
     Plotly.newPlot('genderClassChart', [trace], layout);
@@ -615,7 +564,8 @@ function createFareChart() {
         title: 'Fare Distribution by Survival (Log Scale)',
         xaxis: { title: 'Log(Fare + 1)' },
         yaxis: { title: 'Survival Outcome' },
-        boxmode: 'group'
+        boxmode: 'group',
+        margin: { t: 50, b: 50, l: 50, r: 20 }
     };
     
     Plotly.newPlot('fareChart', [trace1, trace2], layout);
@@ -665,7 +615,8 @@ function createEmbarkedChart() {
         barmode: 'group',
         title: 'Survival Outcome by Embarkation Port',
         xaxis: { title: 'Port' },
-        yaxis: { title: 'Percentage (%)', range: [0, 100] }
+        yaxis: { title: 'Percentage (%)', range: [0, 100] },
+        margin: { t: 50, b: 50, l: 50, r: 20 }
     };
     
     Plotly.newPlot('embarkedChart', [trace1, trace2], layout);
@@ -725,7 +676,7 @@ function createCorrelationChart() {
         title: 'Correlation Matrix of Key Features',
         xaxis: { tickangle: -45 },
         yaxis: { autorange: 'reversed' },
-        margin: { t: 50 }
+        margin: { t: 50, b: 80, l: 50, r: 20 }
     };
     
     Plotly.newPlot('correlationChart', [trace], layout);
@@ -792,7 +743,7 @@ function createImportanceChart() {
         title: 'Feature Importance for Predicting Death',
         xaxis: { title: 'Impact on Death Rate (%)', range: [0, 60] },
         yaxis: { autorange: 'reversed' },
-        margin: { l: 150, r: 50 }
+        margin: { t: 50, b: 50, l: 150, r: 50 }
     };
     
     Plotly.newPlot('importanceChart', [trace], layout);
@@ -974,9 +925,6 @@ function updateCurrentStats() {
 function updateConclusion() {
     updateCurrentStats();
     
-    const hypothesis = document.getElementById('hypothesisInput').value || 
-        "No specific hypothesis provided. Exploring data patterns.";
-    
     // Generate evidence based on current analysis
     const evidenceItems = generateEvidence();
     
@@ -984,8 +932,6 @@ function updateConclusion() {
     const mainFactor = determineMainFactor();
     
     // Update display
-    document.getElementById('conclusionHypothesis').textContent = hypothesis;
-    
     const evidenceList = document.getElementById('conclusionEvidence');
     evidenceList.innerHTML = '';
     
@@ -1091,7 +1037,6 @@ function determineMainFactor() {
 
 // Export conclusion as text
 function exportConclusion() {
-    const hypothesis = document.getElementById('hypothesisInput').value || "No hypothesis";
     const verdict = document.getElementById('conclusionVerdict').textContent;
     
     const evidenceItems = Array.from(document.querySelectorAll('#conclusionEvidence li'))
@@ -1102,9 +1047,6 @@ function exportConclusion() {
 Date: ${new Date().toLocaleDateString()}
 Time: ${new Date().toLocaleTimeString()}
 
-MY HYPOTHESIS:
-${hypothesis}
-
 KEY EVIDENCE:
 ${evidenceItems.map((item, i) => `${i+1}. ${item}`).join('\n')}
 
@@ -1113,8 +1055,7 @@ ${verdict}
 
 Current Filter: ${currentFilters.gender !== 'all' ? `Gender: ${currentFilters.gender}, ` : ''}${currentFilters.pclass !== 'all' ? `Class: ${currentFilters.pclass}, ` : ''}Age: ${currentFilters.minAge}-${currentFilters.maxAge}
 
-Generated by Titanic EDA Dashboard
-https://github.com/YOUR_USERNAME/YOUR_REPO`;
+Generated by Titanic EDA Dashboard`;
 
     // Create download link
     const blob = new Blob([exportText], { type: 'text/plain' });
@@ -1149,7 +1090,7 @@ function shareAnalysis() {
 
 // Reset dashboard
 function resetDashboard() {
-    if (confirm('Reset the dashboard to initial state? Your hypothesis will be kept.')) {
+    if (confirm('Reset the dashboard to initial state?')) {
         // Reset filters
         document.getElementById('filterGender').value = 'all';
         document.getElementById('filterClass').value = 'all';
@@ -1161,7 +1102,6 @@ function resetDashboard() {
         currentFilters = { gender: 'all', pclass: 'all', minAge: 0, maxAge: 100 };
         
         // Update everything
-        applyFilters();
         createAllCharts();
         updateConclusion();
         
@@ -1170,3 +1110,10 @@ function resetDashboard() {
         if (insightsTab) insightsTab.click();
     }
 }
+
+// Add responsive chart resizing on window resize
+window.addEventListener('resize', function() {
+    if (titanicData.length > 0) {
+        createAllCharts();
+    }
+});
