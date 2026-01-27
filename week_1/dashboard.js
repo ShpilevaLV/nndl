@@ -27,7 +27,7 @@ async function loadTitanicData() {
     
     try {
         // CORRECT PATH: Load from nndl/week_1/data/train.csv
-        const response = await fetch('nndl/week_1/data/train.csv');
+        const response = await fetch('data/train.csv');
         
         if (!response.ok) {
             // Try alternative paths if the main path fails
@@ -59,7 +59,7 @@ async function loadTitanicData() {
         } else {
             const csvText = await response.text();
             await parseCSVData(csvText);
-            console.log('Data loaded from: nndl/week_1/data/train.csv');
+            console.log('Data loaded from: data/train.csv');
         }
     } catch (error) {
         console.error('Error loading data:', error);
@@ -77,7 +77,7 @@ async function loadTitanicData() {
                 <li>Refresh this page</li>
             </ol>
             <hr class="my-2">
-            <p class="small mb-0">Expected path: <code>nndl/week_1/data/train.csv</code></p>
+            <p class="small mb-0">Expected path: <code>data/train.csv</code></p>
         </div>`;
         
         loadBtn.disabled = false;
@@ -167,7 +167,7 @@ function updateDataStatus() {
     statusDiv.innerHTML = `<div class="alert alert-success">
         <i class="fas fa-check-circle me-2"></i>
         Data loaded successfully! <strong>${titanicData.length}</strong> passenger records ready for analysis.
-        <br><small>Source: nndl/week_1/data/train.csv</small>
+        <br><small>Source:data/train.csv</small>
     </div>`;
     
     loadBtn.disabled = true;
