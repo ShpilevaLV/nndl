@@ -1,4 +1,4 @@
-// dashboard.js - Titanic EDA Dashboard (Restored with charts)
+// dashboard.js - Titanic EDA Dashboard (Complete Version)
 let titanicData = [];
 let filteredData = [];
 let currentFilters = { gender: 'all', pclass: 'all', minAge: 0, maxAge: 100 };
@@ -17,6 +17,15 @@ document.addEventListener('DOMContentLoaded', function() {
     if (filterClass) filterClass.addEventListener('change', applyFilters);
     if (minAge) minAge.addEventListener('change', applyFilters);
     if (maxAge) maxAge.addEventListener('change', applyFilters);
+    
+    // Add export and share event listeners
+    const exportBtn = document.querySelector('[onclick="exportConclusion()"]');
+    const shareBtn = document.querySelector('[onclick="shareAnalysis()"]');
+    const resetBtn = document.querySelector('[onclick="resetDashboard()"]');
+    
+    if (exportBtn) exportBtn.addEventListener('click', exportConclusion);
+    if (shareBtn) shareBtn.addEventListener('click', shareAnalysis);
+    if (resetBtn) resetBtn.addEventListener('click', resetDashboard);
     
     // Auto-load data
     setTimeout(loadTitanicData, 500);
@@ -97,7 +106,7 @@ async function loadTitanicData() {
         }
         
         // Show placeholder conclusion with example data
-        showPlaceholderConclusion();
+        showPlaceholderData();
     }
 }
 
@@ -138,9 +147,10 @@ async function parseCSVData(csvText, source) {
                     updateQuickStats();
                     updateDataPreview();
                     updateTopGroups();
+                    updateOverallStats();
                     createAllCharts();
                     updateCurrentStats();
-                    updateConclusion(); // Auto-generate conclusion
+                    updateConclusion();
                     
                     // Auto-switch to Insights tab
                     setTimeout(() => {
@@ -160,6 +170,58 @@ async function parseCSVData(csvText, source) {
             }
         });
     });
+}
+
+// Show placeholder data when no data is loaded
+function showPlaceholderData() {
+    // Update data status with placeholder
+    const statusDiv = document.getElementById('dataStatus');
+    if (statusDiv) {
+        statusDiv.innerHTML = `<div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>No data loaded</strong><br>
+            <small>Please load the Titanic dataset to see visualizations and analysis</small>
+        </div>`;
+    }
+    
+    // Show placeholder conclusion
+    const evidenceList = document.getElementById('conclusionEvidence');
+    const conclusionPlaceholder = document.getElementById('conclusionPlaceholder');
+    const userConclusion = document.getElementById('userConclusion');
+    const conclusionVerdict = document.getElementById('conclusionVerdict');
+    
+    if (!evidenceList || !conclusionVerdict) return;
+    
+    // Show placeholder conclusion with example insights
+    const evidence = [
+        '<strong>Gender disparity:</strong> In the Titanic disaster, females had significantly higher survival rates than males',
+        '<strong>Class impact:</strong> First-class passengers had much better survival chances than third-class passengers',
+        '<strong>Age factor:</strong> Children and women were prioritized during evacuation'
+    ];
+    
+    evidenceList.innerHTML = '';
+    evidence.forEach(item => {
+        const li = document.createElement('li');
+        li.innerHTML = item;
+        evidenceList.appendChild(li);
+    });
+    
+    conclusionVerdict.innerHTML = 
+        'Based on historical data analysis, the most important factor for survival on the Titanic was:<br>' +
+        '<span class="text-danger fw-bold">Gender and Passenger Class combined</span>';
+    
+    if (conclusionPlaceholder) conclusionPlaceholder.style.display = 'none';
+    if (userConclusion) userConclusion.style.display = 'block';
+    
+    // Update factor ranking with placeholder data
+    updateFactorRankingPlaceholder();
+    
+    // Update overall stats with placeholder
+    document.getElementById('overallTotalPassengers').textContent = '--';
+    document.getElementById('overallDeathRate').textContent = '--%';
+    document.getElementById('overallSurvivalRate').textContent = '--%';
+    document.getElementById('highestDeathGroup').innerHTML = 'Load data to see statistics';
+    document.getElementById('lowestDeathGroup').innerHTML = 'Load data to see statistics';
 }
 
 // Helper functions
@@ -256,29 +318,18 @@ function updateDataPreview() {
     previewContainer.style.display = 'block';
 }
 
-// Apply filters - ONLY affects Insights tab
-function applyFilters() {
-    const genderFilter = document.getElementById('filterGender')?.value || 'all';
-    const classFilter = document.getElementById('filterClass')?.value || 'all';
-    const minAge = parseInt(document.getElementById('minAge')?.value) || 0;
-    const maxAge = parseInt(document.getElementById('maxAge')?.value) || 100;
+// Update overall statistics
+function updateOverallStats() {
+    const totalPassengers = titanicData.length;
+    const survivors = titanicData.filter(p => p.Survived === 1).length;
+    const deaths = totalPassengers - survivors;
     
-    currentFilters = { gender: genderFilter, pclass: classFilter, minAge, maxAge };
+    const deathRate = totalPassengers > 0 ? ((deaths / totalPassengers) * 100).toFixed(1) : '--';
+    const survivalRate = totalPassengers > 0 ? ((survivors / totalPassengers) * 100).toFixed(1) : '--';
     
-    filteredData = titanicData.filter(passenger => {
-        if (genderFilter !== 'all' && passenger.Sex !== genderFilter) return false;
-        if (classFilter !== 'all' && passenger.Pclass !== parseInt(classFilter)) return false;
-        if (passenger.Age !== null && passenger.Age !== undefined) {
-            if (passenger.Age < minAge || passenger.Age > maxAge) return false;
-        } else if (minAge > 0 || maxAge < 100) {
-            return false;
-        }
-        return true;
-    });
-    
-    updateTopGroups();
-    updateCurrentStats();
-    updateConclusion(); // Only update conclusion, not charts
+    document.getElementById('overallTotalPassengers').textContent = totalPassengers;
+    document.getElementById('overallDeathRate').textContent = `${deathRate}%`;
+    document.getElementById('overallSurvivalRate').textContent = `${survivalRate}%`;
 }
 
 // Update top groups
@@ -320,9 +371,42 @@ function updateTopGroups() {
         const highest = groups.reduce((max, g) => g.deathRate > max.deathRate ? g : max, groups[0]);
         const lowest = groups.reduce((min, g) => g.deathRate < min.deathRate ? g : min, groups[0]);
         
-        highestElem.innerHTML = `<strong>${highest.name}</strong>: ${highest.deathRate}% death rate`;
-        lowestElem.innerHTML = `<strong>${lowest.name}</strong>: ${lowest.deathRate}% death rate`;
+        highestElem.innerHTML = `
+            <span class="d-block fw-bold">${highest.name}</span>
+            <span class="text-danger">${highest.deathRate}% death rate</span>
+        `;
+        
+        lowestElem.innerHTML = `
+            <span class="d-block fw-bold">${lowest.name}</span>
+            <span class="text-success">${lowest.deathRate}% death rate</span>
+        `;
     }
+}
+
+// Apply filters
+function applyFilters() {
+    if (titanicData.length === 0) return;
+    
+    const genderFilter = document.getElementById('filterGender')?.value || 'all';
+    const classFilter = document.getElementById('filterClass')?.value || 'all';
+    const minAge = parseInt(document.getElementById('minAge')?.value) || 0;
+    const maxAge = parseInt(document.getElementById('maxAge')?.value) || 100;
+    
+    currentFilters = { gender: genderFilter, pclass: classFilter, minAge, maxAge };
+    
+    filteredData = titanicData.filter(passenger => {
+        if (genderFilter !== 'all' && passenger.Sex !== genderFilter) return false;
+        if (classFilter !== 'all' && passenger.Pclass !== parseInt(classFilter)) return false;
+        if (passenger.Age !== null && passenger.Age !== undefined) {
+            if (passenger.Age < minAge || passenger.Age > maxAge) return false;
+        } else if (minAge > 0 || maxAge < 100) {
+            return false;
+        }
+        return true;
+    });
+    
+    updateCurrentStats();
+    updateConclusion();
 }
 
 // Update current stats
@@ -363,40 +447,6 @@ function updateCurrentStats() {
     if (lastUpdatedTime) lastUpdatedTime.textContent = timeString;
 }
 
-// Show placeholder conclusion when data fails to load
-function showPlaceholderConclusion() {
-    const evidenceList = document.getElementById('conclusionEvidence');
-    const conclusionPlaceholder = document.getElementById('conclusionPlaceholder');
-    const userConclusion = document.getElementById('userConclusion');
-    const conclusionVerdict = document.getElementById('conclusionVerdict');
-    
-    if (!evidenceList || !conclusionVerdict) return;
-    
-    // Show placeholder conclusion with example insights
-    const evidence = [
-        '<strong>Gender disparity:</strong> In the Titanic disaster, females had significantly higher survival rates than males',
-        '<strong>Class impact:</strong> First-class passengers had much better survival chances than third-class passengers',
-        '<strong>Age factor:</strong> Children and women were prioritized during evacuation'
-    ];
-    
-    evidenceList.innerHTML = '';
-    evidence.forEach(item => {
-        const li = document.createElement('li');
-        li.innerHTML = item;
-        evidenceList.appendChild(li);
-    });
-    
-    conclusionVerdict.innerHTML = 
-        'Based on historical data analysis, the most important factor for survival on the Titanic was:<br>' +
-        '<span class="text-danger fw-bold">Gender and Passenger Class combined</span>';
-    
-    if (conclusionPlaceholder) conclusionPlaceholder.style.display = 'none';
-    if (userConclusion) userConclusion.style.display = 'block';
-    
-    // Update factor ranking with placeholder data
-    updateFactorRankingPlaceholder();
-}
-
 // Update factor ranking with placeholder data
 function updateFactorRankingPlaceholder() {
     const bars = [
@@ -418,7 +468,7 @@ function updateFactorRankingPlaceholder() {
 // Update conclusion (always show, no button needed)
 function updateConclusion() {
     if (titanicData.length === 0) {
-        showPlaceholderConclusion();
+        showPlaceholderData();
         return;
     }
     
@@ -486,6 +536,22 @@ function generateEvidence() {
         const lowest = classAnalysis[classAnalysis.length - 1];
         
         evidence.push(`<strong>Class impact:</strong> Death rate increased from ${lowest.rate}% in ${lowest.class}st class to ${highest.rate}% in ${highest.class}rd class.`);
+    }
+    
+    // Age analysis (if enough data)
+    const validAges = titanicData.filter(p => p.Age !== null);
+    if (validAges.length > 0) {
+        const children = validAges.filter(p => p.Age <= 12);
+        const adults = validAges.filter(p => p.Age > 12 && p.Age <= 60);
+        
+        if (children.length > 10 && adults.length > 10) {
+            const childDeathRate = (children.filter(p => p.Survived === 0).length / children.length * 100).toFixed(1);
+            const adultDeathRate = (adults.filter(p => p.Survived === 0).length / adults.length * 100).toFixed(1);
+            
+            if (parseFloat(childDeathRate) < parseFloat(adultDeathRate)) {
+                evidence.push(`<strong>Age factor:</strong> Children (0-12 years) had lower death rate (${childDeathRate}%) compared to adults (${adultDeathRate}%).`);
+            }
+        }
     }
     
     return evidence;
@@ -1138,6 +1204,24 @@ Generated by Titanic EDA Dashboard`;
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// Share analysis
+function shareAnalysis() {
+    const verdict = document.getElementById('conclusionVerdict')?.textContent || 'No conclusion available';
+    const shareText = `My Titanic EDA analysis: ${verdict.substring(0, 100)}...`;
+    
+    if (navigator.share) {
+        navigator.share({
+            title: 'My Titanic EDA Findings',
+            text: shareText,
+            url: window.location.href
+        });
+    } else {
+        navigator.clipboard.writeText(shareText).then(() => {
+            alert('Analysis copied to clipboard!');
+        });
+    }
 }
 
 // Reset dashboard
