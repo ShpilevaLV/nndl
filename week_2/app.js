@@ -61,85 +61,70 @@ function readFile(file) {
 // Parse CSV text to array of objects
 function parseCSV(csvText) {
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
-    if (lines.length === 0) return [];
-    
     const headers = parseCSVLine(lines[0]);
-    const results = [];
     
-    for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
+    return lines.slice(1).map(line => {
+        const values = parseCSVLine(line);
         const obj = {};
-        
-        headers.forEach((header, index) => {
-            let value = index < values.length ? values[index] : null;
+        headers.forEach((header, i) => {
+            // Handle missing values (empty strings)
+            let value = i < values.length ? values[i] : null;
             
-            // Handle empty strings
-            if (value === '' || value === null || value === undefined) {
+            if (value === '' || value === null) {
                 obj[header] = null;
             } 
-            // Convert numeric values
+            // Convert numerical values to numbers if possible
             else if (!isNaN(value) && value.trim() !== '') {
                 const num = parseFloat(value);
                 obj[header] = isNaN(num) ? value : num;
-            } 
-            // Keep string values
-            else {
+            } else {
                 obj[header] = value;
             }
         });
-        
-        results.push(obj);
-    }
-    
-    return results;
+        return obj;
+    });
 }
 
-// Parse a single CSV line, properly handling quoted fields with commas
+// Parse a single CSV line, handling quoted fields with commas
 function parseCSVLine(line) {
     const result = [];
     let current = '';
     let inQuotes = false;
-    let i = 0;
     
-    while (i < line.length) {
+    for (let i = 0; i < line.length; i++) {
         const char = line[i];
         
         if (char === '"') {
-            // Check if this is an escaped quote (two quotes in a row)
             if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+                // Double quote escape sequence
                 current += '"';
-                i += 2;
-                continue;
-            } else {
-                inQuotes = !inQuotes;
                 i++;
-                continue;
+            } else {
+                // Toggle quote state
+                inQuotes = !inQuotes;
             }
-        }
-        
-        if (char === ',' && !inQuotes) {
-            result.push(current);
+        } else if (char === ',' && !inQuotes) {
+            // End of field
+            result.push(current.trim());
             current = '';
-            i++;
-            continue;
+        } else {
+            current += char;
         }
-        
-        current += char;
-        i++;
     }
     
-    // Don't forget the last field
-    result.push(current);
+    // Add the last field
+    result.push(current.trim());
     
-    return result.map(field => field.trim());
+    return result;
 }
 
 // Create a preview table from data
 function createPreviewTable(data) {
     const table = document.createElement('table');
-    table.className = 'data-table';
     
-    if (data.length === 0) return table;
+    if (data.length === 0) {
+        return table;
+    }
     
     // Create header row
     const headerRow = document.createElement('tr');
@@ -155,20 +140,10 @@ function createPreviewTable(data) {
         const tr = document.createElement('tr');
         Object.values(row).forEach(value => {
             const td = document.createElement('td');
-            if (value === null || value === undefined || value === '') {
-                td.textContent = 'NULL';
+            td.textContent = value !== null ? value : 'NULL';
+            if (value === null) {
                 td.style.color = '#999';
                 td.style.fontStyle = 'italic';
-            } else {
-                td.textContent = typeof value === 'number' ? 
-                    (Number.isInteger(value) ? value : value.toFixed(2)) : 
-                    String(value);
-                
-                // Truncate long strings
-                if (String(value).length > 50) {
-                    td.textContent = String(value).substring(0, 50) + '...';
-                    td.title = value;
-                }
             }
             tr.appendChild(td);
         });
@@ -188,236 +163,147 @@ function inspectData() {
     // Show data preview
     const previewDiv = document.getElementById('data-preview');
     previewDiv.innerHTML = '<h3>Data Preview (First 10 Rows)</h3>';
-    
-    // Debug: Show what data looks like
-    console.log('First row of trainData:', trainData[0]);
-    console.log('All keys:', Object.keys(trainData[0]));
-    
-    // Create table with all available columns
     previewDiv.appendChild(createPreviewTable(trainData.slice(0, 10)));
     
     // Calculate and show data statistics
     const statsDiv = document.getElementById('data-stats');
     statsDiv.innerHTML = '<h3>Data Statistics</h3>';
     
-    // Basic statistics
-    const columns = Object.keys(trainData[0]);
-    const shapeInfo = `Dataset shape: ${trainData.length} rows × ${columns.length} columns`;
+    const shapeInfo = `Dataset shape: ${trainData.length} rows x ${Object.keys(trainData[0]).length} columns`;
     const survivalCount = trainData.filter(row => row[TARGET_FEATURE] === 1).length;
     const survivalRate = (survivalCount / trainData.length * 100).toFixed(2);
     const targetInfo = `Survival rate: ${survivalCount}/${trainData.length} (${survivalRate}%)`;
     
-    // Calculate missing values
+    // Calculate missing values percentage for each feature
     let missingInfo = '<h4>Missing Values Percentage:</h4><ul>';
-    columns.forEach(feature => {
-        const missingCount = trainData.filter(row => 
-            row[feature] === null || 
-            row[feature] === undefined || 
-            row[feature] === '' ||
-            (typeof row[feature] === 'number' && isNaN(row[feature]))
-        ).length;
+    Object.keys(trainData[0]).forEach(feature => {
+        const missingCount = trainData.filter(row => row[feature] === null || row[feature] === undefined).length;
         const missingPercent = (missingCount / trainData.length * 100).toFixed(2);
-        missingInfo += `<li><strong>${feature}:</strong> ${missingPercent}% (${missingCount} missing)</li>`;
+        missingInfo += `<li>${feature}: ${missingPercent}%</li>`;
     });
     missingInfo += '</ul>';
     
-    // Feature types
-    let typeInfo = '<h4>Feature Types:</h4><ul>';
-    columns.forEach(feature => {
-        const firstValue = trainData[0][feature];
-        const type = firstValue === null ? 'null' : typeof firstValue;
-        typeInfo += `<li><strong>${feature}:</strong> ${type}</li>`;
-    });
-    typeInfo += '</ul>';
+    statsDiv.innerHTML += `<p>${shapeInfo}</p><p>${targetInfo}</p>${missingInfo}`;
     
-    statsDiv.innerHTML += `
-        <div style="margin: 15px 0;">
-            <p><strong>${shapeInfo}</strong></p>
-            <p><strong>${targetInfo}</strong></p>
-        </div>
-        ${missingInfo}
-        ${typeInfo}
-    `;
-    
-    // Create simple visualizations
-    createSimpleCharts();
+    // Create visualizations
+    createVisualizations();
     
     // Enable the preprocess button
     document.getElementById('preprocess-btn').disabled = false;
 }
 
-// Create simple charts using HTML/CSS
-function createSimpleCharts() {
+// Create visualizations using tfjs-vis
+function createVisualizations() {
     const chartsDiv = document.getElementById('charts');
     chartsDiv.innerHTML = '<h3>Data Visualizations</h3>';
     
     // Survival by Sex
     const survivalBySex = {};
     trainData.forEach(row => {
-        if (row.Sex !== null && row.Sex !== undefined && row[TARGET_FEATURE] !== null) {
-            const sex = String(row.Sex).trim();
-            if (!survivalBySex[sex]) {
-                survivalBySex[sex] = { survived: 0, total: 0 };
+        if (row.Sex && row.Survived !== undefined) {
+            if (!survivalBySex[row.Sex]) {
+                survivalBySex[row.Sex] = { survived: 0, total: 0 };
             }
-            survivalBySex[sex].total++;
-            if (row[TARGET_FEATURE] === 1) {
-                survivalBySex[sex].survived++;
+            survivalBySex[row.Sex].total++;
+            if (row.Survived === 1) {
+                survivalBySex[row.Sex].survived++;
             }
         }
     });
     
-    let sexChartHTML = '<div class="chart-container"><h4>Survival Rate by Sex</h4>';
-    Object.entries(survivalBySex).forEach(([sex, stats]) => {
-        if (stats.total > 0) {
-            const rate = (stats.survived / stats.total) * 100;
-            sexChartHTML += `
-                <div class="chart-bar">
-                    <div class="bar-label">${sex}</div>
-                    <div class="bar-bg">
-                        <div class="bar-fill" style="width: ${rate}%; background-color: ${sex === 'female' ? '#ff6b6b' : '#4ecdc4'};"></div>
-                    </div>
-                    <div class="bar-value">${rate.toFixed(1)}% (${stats.survived}/${stats.total})</div>
-                </div>
-            `;
-        }
-    });
-    sexChartHTML += '</div>';
+    const sexData = Object.entries(survivalBySex).map(([sex, stats]) => ({
+        sex,
+        survivalRate: (stats.survived / stats.total) * 100
+    }));
+    
+    // Check if tfvis is available
+    if (typeof tfvis !== 'undefined') {
+        tfvis.render.barchart(
+            { name: 'Survival Rate by Sex', tab: 'Charts' },
+            sexData.map(d => ({ x: d.sex, y: d.survivalRate })),
+            { xLabel: 'Sex', yLabel: 'Survival Rate (%)' }
+        );
+    } else {
+        // Fallback to simple HTML chart
+        createSimpleBarChart('Survival Rate by Sex', sexData, chartsDiv);
+    }
     
     // Survival by Pclass
     const survivalByPclass = {};
     trainData.forEach(row => {
-        if (row.Pclass !== null && row.Pclass !== undefined && row[TARGET_FEATURE] !== null) {
-            const pclass = String(row.Pclass);
-            if (!survivalByPclass[pclass]) {
-                survivalByPclass[pclass] = { survived: 0, total: 0 };
+        if (row.Pclass !== undefined && row.Survived !== undefined) {
+            if (!survivalByPclass[row.Pclass]) {
+                survivalByPclass[row.Pclass] = { survived: 0, total: 0 };
             }
-            survivalByPclass[pclass].total++;
-            if (row[TARGET_FEATURE] === 1) {
-                survivalByPclass[pclass].survived++;
+            survivalByPclass[row.Pclass].total++;
+            if (row.Survived === 1) {
+                survivalByPclass[row.Pclass].survived++;
             }
         }
     });
     
-    let pclassChartHTML = '<div class="chart-container"><h4>Survival Rate by Passenger Class</h4>';
-    Object.entries(survivalByPclass).forEach(([pclass, stats]) => {
-        if (stats.total > 0) {
-            const rate = (stats.survived / stats.total) * 100;
-            pclassChartHTML += `
-                <div class="chart-bar">
-                    <div class="bar-label">Class ${pclass}</div>
-                    <div class="bar-bg">
-                        <div class="bar-fill" style="width: ${rate}%; background-color: ${pclass === '1' ? '#1a73e8' : pclass === '2' ? '#34a853' : '#ea4335'};"></div>
-                    </div>
-                    <div class="bar-value">${rate.toFixed(1)}% (${stats.survived}/${stats.total})</div>
-                </div>
-            `;
-        }
+    const pclassData = Object.entries(survivalByPclass).map(([pclass, stats]) => ({
+        pclass: `Class ${pclass}`,
+        survivalRate: (stats.survived / stats.total) * 100
+    }));
+    
+    if (typeof tfvis !== 'undefined') {
+        tfvis.render.barchart(
+            { name: 'Survival Rate by Passenger Class', tab: 'Charts' },
+            pclassData.map(d => ({ x: d.pclass, y: d.survivalRate })),
+            { xLabel: 'Passenger Class', yLabel: 'Survival Rate (%)' }
+        );
+    } else {
+        // Fallback to simple HTML chart
+        createSimpleBarChart('Survival Rate by Passenger Class', pclassData, chartsDiv);
+    }
+    
+    chartsDiv.innerHTML += '<p>Charts are displayed in the tfjs-vis visor. Click the button in the bottom right to view.</p>';
+}
+
+// Create simple bar chart as fallback
+function createSimpleBarChart(title, data, container) {
+    const chartDiv = document.createElement('div');
+    chartDiv.innerHTML = `<h4>${title}</h4>`;
+    
+    data.forEach(item => {
+        const barDiv = document.createElement('div');
+        barDiv.style.margin = '10px 0';
+        barDiv.style.display = 'flex';
+        barDiv.style.alignItems = 'center';
+        
+        const label = document.createElement('div');
+        label.textContent = item.pclass || item.sex;
+        label.style.width = '100px';
+        label.style.marginRight = '10px';
+        
+        const barContainer = document.createElement('div');
+        barContainer.style.flex = '1';
+        barContainer.style.height = '20px';
+        barContainer.style.backgroundColor = '#f0f0f0';
+        barContainer.style.borderRadius = '4px';
+        barContainer.style.overflow = 'hidden';
+        
+        const bar = document.createElement('div');
+        bar.style.height = '100%';
+        bar.style.width = `${Math.min(item.survivalRate, 100)}%`;
+        bar.style.backgroundColor = '#1a73e8';
+        bar.style.transition = 'width 0.5s';
+        
+        const value = document.createElement('div');
+        value.textContent = `${item.survivalRate.toFixed(1)}%`;
+        value.style.marginLeft = '10px';
+        value.style.width = '60px';
+        value.style.textAlign = 'right';
+        
+        barContainer.appendChild(bar);
+        barDiv.appendChild(label);
+        barDiv.appendChild(barContainer);
+        barDiv.appendChild(value);
+        chartDiv.appendChild(barDiv);
     });
-    pclassChartHTML += '</div>';
     
-    chartsDiv.innerHTML += sexChartHTML + pclassChartHTML;
-}
-
-// Calculate median of an array
-function calculateMedian(values) {
-    const filtered = values.filter(v => v !== null && v !== undefined && !isNaN(v));
-    if (filtered.length === 0) return 0;
-    
-    filtered.sort((a, b) => a - b);
-    const half = Math.floor(filtered.length / 2);
-    
-    if (filtered.length % 2 === 0) {
-        return (filtered[half - 1] + filtered[half]) / 2;
-    }
-    
-    return filtered[half];
-}
-
-// Calculate mode of an array
-function calculateMode(values) {
-    const filtered = values.filter(v => v !== null && v !== undefined);
-    if (filtered.length === 0) return 'S'; // Default for Embarked
-    
-    const frequency = {};
-    let maxCount = 0;
-    let mode = filtered[0];
-    
-    filtered.forEach(value => {
-        const val = String(value);
-        frequency[val] = (frequency[val] || 0) + 1;
-        if (frequency[val] > maxCount) {
-            maxCount = frequency[val];
-            mode = val;
-        }
-    });
-    
-    return mode;
-}
-
-// Calculate standard deviation of an array
-function calculateStdDev(values) {
-    const filtered = values.filter(v => v !== null && v !== undefined && !isNaN(v));
-    if (filtered.length <= 1) return 1;
-    
-    const mean = filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
-    const squaredDiffs = filtered.map(value => Math.pow(value - mean, 2));
-    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / filtered.length;
-    return Math.sqrt(variance);
-}
-
-// One-hot encode a value
-function oneHotEncode(value, categories) {
-    const encoding = new Array(categories.length).fill(0);
-    const index = categories.indexOf(String(value));
-    if (index !== -1) {
-        encoding[index] = 1;
-    }
-    return encoding;
-}
-
-// Extract features from a row with imputation and normalization
-function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
-    // Impute missing values
-    const age = (row.Age !== null && row.Age !== undefined && !isNaN(row.Age)) ? row.Age : ageMedian;
-    const fare = (row.Fare !== null && row.Fare !== undefined && !isNaN(row.Fare)) ? row.Fare : fareMedian;
-    const embarked = (row.Embarked !== null && row.Embarked !== undefined && row.Embarked !== '') ? 
-        String(row.Embarked).trim() : embarkedMode;
-    
-    // Get standard deviation for normalization (only from training data)
-    const ageValues = trainData.map(r => r.Age).filter(a => a !== null && a !== undefined && !isNaN(a));
-    const fareValues = trainData.map(r => r.Fare).filter(f => f !== null && f !== undefined && !isNaN(f));
-    
-    const ageStd = calculateStdDev(ageValues);
-    const fareStd = calculateStdDev(fareValues);
-    
-    // Standardize numerical features (handle division by zero)
-    const standardizedAge = ageStd > 0 ? (age - ageMedian) / ageStd : 0;
-    const standardizedFare = fareStd > 0 ? (fare - fareMedian) / fareStd : 0;
-    
-    // One-hot encode categorical features
-    const pclassOneHot = oneHotEncode(row.Pclass, ['1', '2', '3']);
-    const sexOneHot = oneHotEncode(row.Sex, ['male', 'female']);
-    const embarkedOneHot = oneHotEncode(embarked, ['C', 'Q', 'S']);
-    
-    // Start with numerical features
-    let features = [
-        standardizedAge,
-        standardizedFare,
-        (row.SibSp || 0),
-        (row.Parch || 0)
-    ];
-    
-    // Add one-hot encoded features
-    features = features.concat(pclassOneHot, sexOneHot, embarkedOneHot);
-    
-    // Add optional family features if enabled
-    if (document.getElementById('add-family-features').checked) {
-        const familySize = (row.SibSp || 0) + (row.Parch || 0) + 1;
-        const isAlone = familySize === 1 ? 1 : 0;
-        features.push(familySize, isAlone);
-    }
-    
-    return features;
+    container.appendChild(chartDiv);
 }
 
 // Preprocess the data
@@ -428,26 +314,13 @@ function preprocessData() {
     }
     
     const outputDiv = document.getElementById('preprocessing-output');
-    outputDiv.innerHTML = '<div class="processing">Preprocessing data...</div>';
+    outputDiv.innerHTML = 'Preprocessing data...';
     
     try {
         // Calculate imputation values from training data
-        const ageValues = trainData.map(row => row.Age).filter(a => a !== null && a !== undefined && !isNaN(a));
-        const fareValues = trainData.map(row => row.Fare).filter(f => f !== null && f !== undefined && !isNaN(f));
-        const embarkedValues = trainData.map(row => row.Embarked).filter(e => e !== null && e !== undefined && e !== '');
-        
-        const ageMedian = calculateMedian(ageValues);
-        const fareMedian = calculateMedian(fareValues);
-        const embarkedMode = calculateMode(embarkedValues);
-        
-        console.log('Imputation values:', { 
-            ageMedian, 
-            fareMedian, 
-            embarkedMode,
-            ageValuesLength: ageValues.length,
-            fareValuesLength: fareValues.length,
-            embarkedValuesLength: embarkedValues.length
-        });
+        const ageMedian = calculateMedian(trainData.map(row => row.Age).filter(age => age !== null));
+        const fareMedian = calculateMedian(trainData.map(row => row.Fare).filter(fare => fare !== null));
+        const embarkedMode = calculateMode(trainData.map(row => row.Embarked).filter(e => e !== null));
         
         // Preprocess training data
         preprocessedTrainData = {
@@ -458,9 +331,7 @@ function preprocessData() {
         trainData.forEach(row => {
             const features = extractFeatures(row, ageMedian, fareMedian, embarkedMode);
             preprocessedTrainData.features.push(features);
-            // Ensure label is 0 or 1
-            const label = row[TARGET_FEATURE] === 1 ? 1 : 0;
-            preprocessedTrainData.labels.push(label);
+            preprocessedTrainData.labels.push(row[TARGET_FEATURE]);
         });
         
         // Preprocess test data
@@ -479,34 +350,113 @@ function preprocessData() {
         preprocessedTrainData.features = tf.tensor2d(preprocessedTrainData.features);
         preprocessedTrainData.labels = tf.tensor1d(preprocessedTrainData.labels);
         
-        const featureCount = preprocessedTestData.features[0] ? preprocessedTestData.features[0].length : 0;
-        
         outputDiv.innerHTML = `
-            <div class="success-message">
-                <h4>✅ Preprocessing completed successfully!</h4>
-                <p><strong>Training samples:</strong> ${preprocessedTrainData.features.shape[0]}</p>
-                <p><strong>Number of features:</strong> ${featureCount}</p>
-                <p><strong>Training features shape:</strong> [${preprocessedTrainData.features.shape}]</p>
-                <p><strong>Training labels shape:</strong> [${preprocessedTrainData.labels.shape}]</p>
-                <p><strong>Test samples:</strong> ${preprocessedTestData.features.length}</p>
-                <p><strong>Imputation values used:</strong></p>
-                <ul>
-                    <li>Age median: ${ageMedian.toFixed(2)}</li>
-                    <li>Fare median: ${fareMedian.toFixed(2)}</li>
-                    <li>Embarked mode: "${embarkedMode}"</li>
-                </ul>
-                <p><strong>Features included:</strong> Age, Fare, SibSp, Parch, Pclass (one-hot), Sex (one-hot), Embarked (one-hot)
-                ${document.getElementById('add-family-features').checked ? ', FamilySize, IsAlone' : ''}</p>
-            </div>
+            <p>Preprocessing completed!</p>
+            <p>Training features shape: ${preprocessedTrainData.features.shape}</p>
+            <p>Training labels shape: ${preprocessedTrainData.labels.shape}</p>
+            <p>Test features shape: [${preprocessedTestData.features.length}, ${preprocessedTestData.features[0] ? preprocessedTestData.features[0].length : 0}]</p>
+            <p>Feature count: ${preprocessedTestData.features[0] ? preprocessedTestData.features[0].length : 0}</p>
         `;
         
         // Enable the create model button
         document.getElementById('create-model-btn').disabled = false;
-        
     } catch (error) {
-        outputDiv.innerHTML = `<div class="error-message">Error during preprocessing: ${error.message}</div>`;
-        console.error('Preprocessing error:', error, error.stack);
+        outputDiv.innerHTML = `Error during preprocessing: ${error.message}`;
+        console.error(error);
     }
+}
+
+// Extract features from a row with imputation and normalization
+function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
+    // Impute missing values
+    const age = row.Age !== null ? row.Age : ageMedian;
+    const fare = row.Fare !== null ? row.Fare : fareMedian;
+    const embarked = row.Embarked !== null ? row.Embarked : embarkedMode;
+    
+    // Standardize numerical features
+    const ageStd = calculateStdDev(trainData.map(r => r.Age).filter(a => a !== null)) || 1;
+    const fareStd = calculateStdDev(trainData.map(r => r.Fare).filter(f => f !== null)) || 1;
+    
+    const standardizedAge = (age - ageMedian) / ageStd;
+    const standardizedFare = (fare - fareMedian) / fareStd;
+    
+    // One-hot encode categorical features
+    const pclassOneHot = oneHotEncode(row.Pclass, [1, 2, 3]); // Pclass values: 1, 2, 3
+    const sexOneHot = oneHotEncode(row.Sex, ['male', 'female']);
+    const embarkedOneHot = oneHotEncode(embarked, ['C', 'Q', 'S']);
+    
+    // Start with numerical features
+    let features = [
+        standardizedAge,
+        standardizedFare,
+        row.SibSp || 0,
+        row.Parch || 0
+    ];
+    
+    // Add one-hot encoded features
+    features = features.concat(pclassOneHot, sexOneHot, embarkedOneHot);
+    
+    // Add optional family features if enabled
+    if (document.getElementById('add-family-features').checked) {
+        const familySize = (row.SibSp || 0) + (row.Parch || 0) + 1;
+        const isAlone = familySize === 1 ? 1 : 0;
+        features.push(familySize, isAlone);
+    }
+    
+    return features;
+}
+
+// Calculate median of an array
+function calculateMedian(values) {
+    if (values.length === 0) return 0;
+    
+    values.sort((a, b) => a - b);
+    const half = Math.floor(values.length / 2);
+    
+    if (values.length % 2 === 0) {
+        return (values[half - 1] + values[half]) / 2;
+    }
+    
+    return values[half];
+}
+
+// Calculate mode of an array
+function calculateMode(values) {
+    if (values.length === 0) return 'S'; // Default for Embarked
+    
+    const frequency = {};
+    let maxCount = 0;
+    let mode = values[0];
+    
+    values.forEach(value => {
+        frequency[value] = (frequency[value] || 0) + 1;
+        if (frequency[value] > maxCount) {
+            maxCount = frequency[value];
+            mode = value;
+        }
+    });
+    
+    return mode;
+}
+
+// Calculate standard deviation of an array
+function calculateStdDev(values) {
+    if (values.length === 0) return 0;
+    
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDiffs = values.map(value => Math.pow(value - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
+    return Math.sqrt(variance);
+}
+
+// One-hot encode a value
+function oneHotEncode(value, categories) {
+    const encoding = new Array(categories.length).fill(0);
+    const index = categories.indexOf(value);
+    if (index !== -1) {
+        encoding[index] = 1;
+    }
+    return encoding;
 }
 
 // Create the model
@@ -525,20 +475,17 @@ function createModel() {
     model.add(tf.layers.dense({
         units: 16,
         activation: 'relu',
-        inputShape: [inputShape],
-        kernelInitializer: 'glorotNormal',
-        name: 'hidden_layer'
+        inputShape: [inputShape]
     }));
     
     model.add(tf.layers.dense({
         units: 1,
-        activation: 'sigmoid',
-        name: 'output_layer'
+        activation: 'sigmoid'
     }));
     
     // Compile the model
     model.compile({
-        optimizer: tf.train.adam(0.001),
+        optimizer: 'adam',
         loss: 'binaryCrossentropy',
         metrics: ['accuracy']
     });
@@ -548,45 +495,81 @@ function createModel() {
     summaryDiv.innerHTML = '<h3>Model Summary</h3>';
     
     // Create a simple summary table
-    let summaryHTML = `
-        <table class="model-table">
-            <tr>
-                <th>Layer (type)</th>
-                <th>Output Shape</th>
-                <th>Parameters</th>
-            </tr>
-    `;
+    const table = document.createElement('table');
+    table.style.borderCollapse = 'collapse';
+    table.style.width = '100%';
     
+    // Table header
+    const headerRow = document.createElement('tr');
+    ['Layer (type)', 'Output Shape', 'Parameters'].forEach(header => {
+        const th = document.createElement('th');
+        th.textContent = header;
+        th.style.border = '1px solid #ddd';
+        th.style.padding = '8px';
+        th.style.textAlign = 'left';
+        th.style.backgroundColor = '#f2f2f2';
+        headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+    
+    // Table rows for each layer
     let totalParams = 0;
     model.layers.forEach((layer, i) => {
-        const outputShape = JSON.stringify(layer.outputShape).replace(/"/g, '');
+        const row = document.createElement('tr');
+        
+        const layerCell = document.createElement('td');
+        layerCell.textContent = `Layer ${i+1} (${layer.getClassName()})`;
+        layerCell.style.border = '1px solid #ddd';
+        layerCell.style.padding = '8px';
+        row.appendChild(layerCell);
+        
+        const shapeCell = document.createElement('td');
+        shapeCell.textContent = JSON.stringify(layer.outputShape).replace(/"/g, '');
+        shapeCell.style.border = '1px solid #ddd';
+        shapeCell.style.padding = '8px';
+        row.appendChild(shapeCell);
+        
+        const paramsCell = document.createElement('td');
         const params = layer.countParams();
         totalParams += params;
-        summaryHTML += `
-            <tr>
-                <td>${layer.name}</td>
-                <td>${outputShape}</td>
-                <td>${params.toLocaleString()}</td>
-            </tr>
-        `;
+        paramsCell.textContent = params.toLocaleString();
+        paramsCell.style.border = '1px solid #ddd';
+        paramsCell.style.padding = '8px';
+        row.appendChild(paramsCell);
+        
+        table.appendChild(row);
     });
     
-    summaryHTML += `
-        <tr class="total-row">
-            <td colspan="2"><strong>Total Parameters</strong></td>
-            <td><strong>${totalParams.toLocaleString()}</strong></td>
-        </tr>
-    </table>
+    // Total parameters row
+    const totalRow = document.createElement('tr');
+    totalRow.style.backgroundColor = '#f9f9f9';
     
-    <div class="note">
+    const totalLabelCell = document.createElement('td');
+    totalLabelCell.colSpan = 2;
+    totalLabelCell.textContent = 'Total Parameters';
+    totalLabelCell.style.border = '1px solid #ddd';
+    totalLabelCell.style.padding = '8px';
+    totalLabelCell.style.fontWeight = 'bold';
+    totalRow.appendChild(totalLabelCell);
+    
+    const totalValueCell = document.createElement('td');
+    totalValueCell.textContent = totalParams.toLocaleString();
+    totalValueCell.style.border = '1px solid #ddd';
+    totalValueCell.style.padding = '8px';
+    totalValueCell.style.fontWeight = 'bold';
+    totalRow.appendChild(totalValueCell);
+    
+    table.appendChild(totalRow);
+    
+    summaryDiv.appendChild(table);
+    
+    // Add architecture description
+    summaryDiv.innerHTML += `
         <p><strong>Model Architecture:</strong> Input(${inputShape}) → Dense(16, ReLU) → Dense(1, Sigmoid)</p>
-        <p><strong>Parameters calculation:</strong> (${inputShape} × 16 + 16) + (16 × 1 + 1) = ${totalParams}</p>
-        <p><strong>Purpose:</strong> Binary classification (survived vs not survived)</p>
-        <p><strong>Sigmoid activation:</strong> Converts output to probability between 0 and 1</p>
-    </div>
+        <p><strong>Total parameters:</strong> ${totalParams}</p>
+        <p><strong>Activation functions:</strong> ReLU (hidden layer), Sigmoid (output layer)</p>
+        <p><strong>Sigmoid output:</strong> Produces probability between 0 and 1 for binary classification</p>
     `;
-    
-    summaryDiv.innerHTML += summaryHTML;
     
     // Enable the train button
     document.getElementById('train-btn').disabled = false;
@@ -600,7 +583,7 @@ async function trainModel() {
     }
     
     const statusDiv = document.getElementById('training-status');
-    statusDiv.innerHTML = '<div class="processing">Training model...</div>';
+    statusDiv.innerHTML = 'Training model...';
     
     try {
         // Split training data into train and validation sets (80/20)
@@ -612,47 +595,35 @@ async function trainModel() {
         const valFeatures = preprocessedTrainData.features.slice(splitIndex);
         const valLabels = preprocessedTrainData.labels.slice(splitIndex);
         
-        console.log('Data split:', {
-            total: preprocessedTrainData.features.shape[0],
-            train: splitIndex,
-            validation: preprocessedTrainData.features.shape[0] - splitIndex
-        });
-        
         // Store validation data for later evaluation
         validationData = valFeatures;
         validationLabels = valLabels;
+        
+        // Use tfvis callbacks for visualization
+        const callbacks = [];
+        if (typeof tfvis !== 'undefined') {
+            callbacks.push(tfvis.show.fitCallbacks(
+                { name: 'Training Performance' },
+                ['loss', 'acc', 'val_loss', 'val_acc']
+            ));
+        }
+        
+        // Add a custom callback for status updates
+        callbacks.push({
+            onEpochEnd: (epoch, logs) => {
+                statusDiv.innerHTML = `Epoch ${epoch + 1}/50 - loss: ${logs.loss.toFixed(4)}, acc: ${logs.acc.toFixed(4)}, val_loss: ${logs.val_loss.toFixed(4)}, val_acc: ${logs.val_acc.toFixed(4)}`;
+            }
+        });
         
         // Train the model
         trainingHistory = await model.fit(trainFeatures, trainLabels, {
             epochs: 50,
             batchSize: 32,
             validationData: [valFeatures, valLabels],
-            callbacks: {
-                onEpochEnd: (epoch, logs) => {
-                    // Update status
-                    statusDiv.innerHTML = `
-                        <div class="processing">
-                            <p>Epoch ${epoch + 1}/50</p>
-                            <p>Loss: ${logs.loss.toFixed(4)} | Accuracy: ${(logs.acc * 100).toFixed(2)}%</p>
-                            <p>Val Loss: ${logs.val_loss.toFixed(4)} | Val Accuracy: ${(logs.val_acc * 100).toFixed(2)}%</p>
-                        </div>
-                    `;
-                    
-                    // Update training chart if tfvis is available
-                    if (typeof tfvis !== 'undefined') {
-                        try {
-                            const history = [{epoch: epoch, loss: logs.loss, acc: logs.acc, val_loss: logs.val_loss, val_acc: logs.val_acc}];
-                            tfvis.show.history({name: 'Training History', tab: 'Training'}, history, ['loss', 'acc', 'val_loss', 'val_acc']);
-                        } catch (e) {
-                            console.log('tfvis not available for charting');
-                        }
-                    }
-                }
-            },
-            verbose: 0
+            callbacks: callbacks
         });
         
-        statusDiv.innerHTML += '<div class="success-message"><p>✅ Training completed successfully!</p></div>';
+        statusDiv.innerHTML += '<p>Training completed!</p>';
         
         // Make predictions on validation set for evaluation
         validationPredictions = model.predict(validationData);
@@ -664,24 +635,23 @@ async function trainModel() {
         // Enable the predict button
         document.getElementById('predict-btn').disabled = false;
         
-        // Enable the importance button
+        // Enable the sigmoid visualization button
+        document.getElementById('sigmoid-btn').disabled = false;
+        
+        // Enable the feature importance button
         document.getElementById('importance-btn').disabled = false;
         
         // Calculate initial metrics
-        await updateMetrics();
-        
+        updateMetrics();
     } catch (error) {
-        statusDiv.innerHTML = `<div class="error-message">Error during training: ${error.message}</div>`;
-        console.error('Training error:', error, error.stack);
+        statusDiv.innerHTML = `Error during training: ${error.message}`;
+        console.error(error);
     }
 }
 
 // Update metrics based on threshold
 async function updateMetrics() {
-    if (!validationPredictions || !validationLabels) {
-        console.log('Validation data not available');
-        return;
-    }
+    if (!validationPredictions || !validationLabels) return;
     
     const threshold = parseFloat(document.getElementById('threshold-slider').value);
     document.getElementById('threshold-value').textContent = threshold.toFixed(2);
@@ -692,8 +662,8 @@ async function updateMetrics() {
         const trueVals = await validationLabels.array();
         
         // Flatten arrays if needed
-        const predictions = Array.isArray(predVals[0]) ? predVals.flat() : predVals;
-        const actuals = Array.isArray(trueVals[0]) ? trueVals.flat() : trueVals;
+        const predictions = predVals.flat();
+        const actuals = trueVals.flat();
         
         // Calculate confusion matrix
         let tp = 0, tn = 0, fp = 0, fn = 0;
@@ -711,21 +681,21 @@ async function updateMetrics() {
         // Update confusion matrix display
         const cmDiv = document.getElementById('confusion-matrix');
         cmDiv.innerHTML = `
-            <table class="confusion-table">
+            <table style="border-collapse: collapse; margin: 10px auto;">
                 <tr>
-                    <th></th>
-                    <th>Predicted Survived</th>
-                    <th>Predicted Not Survived</th>
+                    <th style="border: 1px solid #ddd; padding: 8px;"></th>
+                    <th style="border: 1px solid #ddd; padding: 8px; background: #e8f4f8;">Predicted Survived</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; background: #f8e8e8;">Predicted Not Survived</th>
                 </tr>
                 <tr>
-                    <th>Actual Survived</th>
-                    <td class="true-positive">${tp} (True Positive)</td>
-                    <td class="false-negative">${fn} (False Negative)</td>
+                    <th style="border: 1px solid #ddd; padding: 8px; background: #e8f4f8;">Actual Survived</th>
+                    <td style="border: 1px solid #ddd; padding: 8px; text-align: center; background: #d4edda;">${tp}<br><small>True Positive</small></td>
+                    <td style="border: 1px solid #ddd; padding: 8px; text-align: center; background: #f8d7da;">${fn}<br><small>False Negative</small></td>
                 </tr>
                 <tr>
-                    <th>Actual Not Survived</th>
-                    <td class="false-positive">${fp} (False Positive)</td>
-                    <td class="true-negative">${tn} (True Negative)</td>
+                    <th style="border: 1px solid #ddd; padding: 8px; background: #f8e8e8;">Actual Not Survived</th>
+                    <td style="border: 1px solid #ddd; padding: 8px; text-align: center; background: #f8d7da;">${fp}<br><small>False Positive</small></td>
+                    <td style="border: 1px solid #ddd; padding: 8px; text-align: center; background: #d4edda;">${tn}<br><small>True Negative</small></td>
                 </tr>
             </table>
         `;
@@ -739,36 +709,38 @@ async function updateMetrics() {
         // Update performance metrics display
         const metricsDiv = document.getElementById('performance-metrics');
         metricsDiv.innerHTML = `
-            <div class="metric-item">
-                <span class="metric-label">Accuracy:</span>
-                <span class="metric-value">${(accuracy * 100).toFixed(2)}%</span>
-            </div>
-            <div class="metric-item">
-                <span class="metric-label">Precision:</span>
-                <span class="metric-value">${precision.toFixed(4)}</span>
-            </div>
-            <div class="metric-item">
-                <span class="metric-label">Recall (Sensitivity):</span>
-                <span class="metric-value">${recall.toFixed(4)}</span>
-            </div>
-            <div class="metric-item">
-                <span class="metric-label">F1 Score:</span>
-                <span class="metric-value">${f1.toFixed(4)}</span>
+            <div style="margin: 10px 0;">
+                <div style="display: flex; justify-content: space-between; padding: 5px 0;">
+                    <span><strong>Accuracy:</strong></span>
+                    <span>${(accuracy * 100).toFixed(2)}%</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 5px 0;">
+                    <span><strong>Precision:</strong></span>
+                    <span>${precision.toFixed(4)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 5px 0;">
+                    <span><strong>Recall:</strong></span>
+                    <span>${recall.toFixed(4)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 5px 0;">
+                    <span><strong>F1 Score:</strong></span>
+                    <span>${f1.toFixed(4)}</span>
+                </div>
             </div>
         `;
         
-        // Plot ROC curve
-        await plotROC(actuals, predictions);
+        // Calculate and plot ROC curve
+        await plotROC(actuals, predictions, threshold);
         
     } catch (error) {
-        console.error('Error in updateMetrics:', error);
+        console.error('Error updating metrics:', error);
         const metricsDiv = document.getElementById('performance-metrics');
-        metricsDiv.innerHTML = `<div class="error-message">Error calculating metrics: ${error.message}</div>`;
+        metricsDiv.innerHTML += `<p style="color: red;">Error calculating metrics: ${error.message}</p>`;
     }
 }
 
 // Plot ROC curve
-async function plotROC(trueLabels, predictions) {
+async function plotROC(trueLabels, predictions, currentThreshold) {
     // Calculate TPR and FPR for different thresholds
     const thresholds = Array.from({ length: 101 }, (_, i) => i / 100);
     const rocData = [];
@@ -789,8 +761,8 @@ async function plotROC(trueLabels, predictions) {
             }
         }
         
-        const tpr = tp / (tp + fn) || 0; // True Positive Rate (Recall)
-        const fpr = fp / (fp + tn) || 0; // False Positive Rate
+        const tpr = tp / (tp + fn) || 0;
+        const fpr = fp / (fp + tn) || 0;
         
         rocData.push({ threshold, fpr, tpr });
     });
@@ -804,34 +776,48 @@ async function plotROC(trueLabels, predictions) {
     // Update metrics with AUC
     const metricsDiv = document.getElementById('performance-metrics');
     metricsDiv.innerHTML += `
-        <div class="metric-item">
-            <span class="metric-label">AUC (Area Under ROC):</span>
-            <span class="metric-value">${auc.toFixed(4)}</span>
+        <div style="display: flex; justify-content: space-between; padding: 5px 0; border-top: 1px solid #eee; margin-top: 10px;">
+            <span><strong>AUC (Area Under ROC):</strong></span>
+            <span>${auc.toFixed(4)}</span>
         </div>
     `;
     
-    // Create ROC curve visualization
-    createSimpleROCCurve(rocData, auc);
+    // Plot ROC curve
+    if (typeof tfvis !== 'undefined') {
+        tfvis.render.linechart(
+            { name: 'ROC Curve', tab: 'Evaluation' },
+            { values: rocData.map(d => ({ x: d.fpr, y: d.tpr })) },
+            { 
+                xLabel: 'False Positive Rate', 
+                yLabel: 'True Positive Rate',
+                series: ['ROC Curve'],
+                width: 400,
+                height: 400
+            }
+        );
+    } else {
+        // Create simple ROC curve visualization
+        createSimpleROCCurve(rocData, auc, currentThreshold);
+    }
 }
 
-// Create a simple ROC curve without tfvis
-function createSimpleROCCurve(rocData, auc) {
-    const container = document.getElementById('roc-chart');
-    if (!container) return;
+// Create simple ROC curve visualization
+function createSimpleROCCurve(rocData, auc, currentThreshold) {
+    const rocContainer = document.getElementById('roc-chart');
+    if (!rocContainer) return;
     
-    container.innerHTML = `
+    rocContainer.innerHTML = `
         <h4>ROC Curve (AUC = ${auc.toFixed(4)})</h4>
-        <div style="position: relative; width: 100%; max-width: 500px; margin: 0 auto;">
-            <canvas id="roc-canvas" width="500" height="400" style="border: 1px solid #ddd; background: white;"></canvas>
-            <div style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 3px; font-size: 12px;">
-                AUC = ${auc.toFixed(4)}
-            </div>
+        <div style="position: relative; width: 100%; max-width: 400px; margin: 0 auto;">
+            <canvas id="roc-canvas" width="400" height="400" style="border: 1px solid #ddd;"></canvas>
         </div>
         <p style="text-align: center; font-size: 0.9em; color: #666;">
-            ROC curve shows trade-off between True Positive Rate and False Positive Rate at different classification thresholds.
+            ROC curve shows the trade-off between True Positive Rate and False Positive Rate.
+            Current threshold: ${currentThreshold.toFixed(2)}
         </p>
     `;
     
+    // Draw the ROC curve
     setTimeout(() => {
         const canvas = document.getElementById('roc-canvas');
         if (!canvas) return;
@@ -839,7 +825,7 @@ function createSimpleROCCurve(rocData, auc) {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-        const padding = 50;
+        const padding = 40;
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
@@ -854,7 +840,7 @@ function createSimpleROCCurve(rocData, auc) {
         ctx.lineWidth = 1;
         ctx.stroke();
         
-        // Draw axis labels
+        // Draw labels
         ctx.font = '12px Arial';
         ctx.fillStyle = '#333';
         ctx.fillText('False Positive Rate', width / 2 - 40, height - 10);
@@ -864,45 +850,18 @@ function createSimpleROCCurve(rocData, auc) {
         ctx.fillText('True Positive Rate', 0, 0);
         ctx.restore();
         
-        // Draw grid
-        ctx.strokeStyle = '#eee';
-        ctx.lineWidth = 0.5;
-        for (let i = 0; i <= 1; i += 0.2) {
-            // Horizontal grid lines
-            const y = padding + (1 - i) * (height - 2 * padding);
-            ctx.beginPath();
-            ctx.moveTo(padding, y);
-            ctx.lineTo(width - padding, y);
-            ctx.stroke();
-            
-            // Vertical grid lines
-            const x = padding + i * (width - 2 * padding);
-            ctx.beginPath();
-            ctx.moveTo(x, padding);
-            ctx.lineTo(x, height - padding);
-            ctx.stroke();
-            
-            // Axis ticks
-            ctx.fillStyle = '#666';
-            ctx.fillText(i.toFixed(1), x - 5, height - padding + 15);
-            ctx.fillText(i.toFixed(1), padding - 25, y + 4);
-        }
-        
         // Draw diagonal reference line
         ctx.beginPath();
         ctx.moveTo(padding, height - padding);
         ctx.lineTo(width - padding, padding);
-        ctx.strokeStyle = '#999';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = '#ccc';
         ctx.stroke();
-        ctx.setLineDash([]);
         
         // Draw ROC curve
         ctx.beginPath();
         rocData.forEach((point, i) => {
             const x = padding + point.fpr * (width - 2 * padding);
-            const y = padding + (1 - point.tpr) * (height - 2 * padding);
+            const y = height - padding - point.tpr * (height - 2 * padding);
             
             if (i === 0) {
                 ctx.moveTo(x, y);
@@ -915,25 +874,20 @@ function createSimpleROCCurve(rocData, auc) {
         ctx.stroke();
         
         // Draw current threshold point
-        const threshold = parseFloat(document.getElementById('threshold-slider').value);
-        const thresholdPoint = rocData.find(d => Math.abs(d.threshold - threshold) < 0.01) || rocData[Math.round(threshold * 100)];
+        const thresholdPoint = rocData.find(d => Math.abs(d.threshold - currentThreshold) < 0.01) || rocData[50];
         if (thresholdPoint) {
             const x = padding + thresholdPoint.fpr * (width - 2 * padding);
-            const y = padding + (1 - thresholdPoint.tpr) * (height - 2 * padding);
+            const y = height - padding - thresholdPoint.tpr * (height - 2 * padding);
             
             ctx.beginPath();
-            ctx.arc(x, y, 6, 0, Math.PI * 2);
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
             ctx.fillStyle = '#ff0000';
             ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
             
-            // Label
+            // Add label
             ctx.fillStyle = '#ff0000';
-            ctx.fillText(`Threshold: ${threshold.toFixed(2)}`, x + 10, y - 10);
+            ctx.fillText(`Threshold: ${currentThreshold.toFixed(2)}`, x + 10, y - 10);
         }
-        
     }, 100);
 }
 
@@ -945,7 +899,7 @@ async function predict() {
     }
     
     const outputDiv = document.getElementById('prediction-output');
-    outputDiv.innerHTML = '<div class="processing">Making predictions...</div>';
+    outputDiv.innerHTML = 'Making predictions...';
     
     try {
         // Convert test features to tensor
@@ -969,39 +923,44 @@ async function predict() {
         outputDiv.innerHTML = '<h3>Prediction Results (First 10 Rows)</h3>';
         outputDiv.appendChild(createPredictionTable(results.slice(0, 10)));
         
-        // Calculate summary statistics
+        // Show summary statistics
         const survivedCount = results.filter(r => r.Survived === 1).length;
-        const avgProbability = results.reduce((sum, r) => sum + r.Probability, 0) / results.length;
+        const totalCount = results.length;
+        const survivalRate = (survivedCount / totalCount * 100).toFixed(2);
         
         outputDiv.innerHTML += `
-            <div class="success-message" style="margin-top: 20px;">
-                <p>✅ Predictions completed!</p>
-                <p><strong>Total predictions:</strong> ${results.length} samples</p>
-                <p><strong>Predicted to survive:</strong> ${survivedCount} (${(survivedCount/results.length*100).toFixed(1)}%)</p>
-                <p><strong>Average probability:</strong> ${avgProbability.toFixed(4)}</p>
-                <p><strong>Threshold:</strong> 0.5 (can be adjusted in Evaluation section)</p>
+            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                <p><strong>Predictions completed!</strong></p>
+                <p>Total predictions: ${totalCount}</p>
+                <p>Predicted to survive: ${survivedCount} (${survivalRate}%)</p>
+                <p>Threshold for survival: ≥ 0.5</p>
             </div>
         `;
         
         // Enable the export button
         document.getElementById('export-btn').disabled = false;
-        
     } catch (error) {
-        outputDiv.innerHTML = `<div class="error-message">Error during prediction: ${error.message}</div>`;
-        console.error('Prediction error:', error);
+        outputDiv.innerHTML = `Error during prediction: ${error.message}`;
+        console.error(error);
     }
 }
 
 // Create prediction table
 function createPredictionTable(data) {
     const table = document.createElement('table');
-    table.className = 'prediction-table';
+    table.style.borderCollapse = 'collapse';
+    table.style.width = '100%';
+    table.style.margin = '10px 0';
     
     // Create header row
     const headerRow = document.createElement('tr');
     ['PassengerId', 'Survived', 'Probability'].forEach(header => {
         const th = document.createElement('th');
         th.textContent = header;
+        th.style.border = '1px solid #ddd';
+        th.style.padding = '8px';
+        th.style.textAlign = 'left';
+        th.style.backgroundColor = '#f2f2f2';
         headerRow.appendChild(th);
     });
     table.appendChild(headerRow);
@@ -1013,28 +972,34 @@ function createPredictionTable(data) {
         // PassengerId
         const idCell = document.createElement('td');
         idCell.textContent = row.PassengerId;
+        idCell.style.border = '1px solid #ddd';
+        idCell.style.padding = '8px';
         tr.appendChild(idCell);
         
         // Survived
         const survivedCell = document.createElement('td');
-        survivedCell.textContent = row.Survived === 1 ? 'Yes ✅' : 'No ❌';
+        survivedCell.textContent = row.Survived === 1 ? 'Yes (1)' : 'No (0)';
+        survivedCell.style.border = '1px solid #ddd';
+        survivedCell.style.padding = '8px';
         survivedCell.style.fontWeight = 'bold';
-        survivedCell.style.color = row.Survived === 1 ? 'green' : '#d32f2f';
+        survivedCell.style.color = row.Survived === 1 ? 'green' : 'red';
         tr.appendChild(survivedCell);
         
         // Probability
         const probCell = document.createElement('td');
         probCell.textContent = row.Probability.toFixed(4);
-        // Color based on probability
+        probCell.style.border = '1px solid #ddd';
+        probCell.style.padding = '8px';
+        
+        // Color code based on probability
         if (row.Probability >= 0.7) {
             probCell.style.color = 'green';
             probCell.style.fontWeight = 'bold';
         } else if (row.Probability <= 0.3) {
-            probCell.style.color = '#d32f2f';
+            probCell.style.color = 'red';
             probCell.style.fontWeight = 'bold';
-        } else {
-            probCell.style.color = '#666';
         }
+        
         tr.appendChild(probCell);
         
         table.appendChild(tr);
@@ -1051,7 +1016,7 @@ async function exportResults() {
     }
     
     const statusDiv = document.getElementById('export-status');
-    statusDiv.innerHTML = '<div class="processing">Exporting results...</div>';
+    statusDiv.innerHTML = 'Exporting results...';
     
     try {
         // Get predictions
@@ -1074,69 +1039,64 @@ async function exportResults() {
         
         // Create download links
         const submissionLink = document.createElement('a');
-        submissionLink.href = URL.createObjectURL(new Blob([submissionCSV], { type: 'text/csv;charset=utf-8;' }));
+        submissionLink.href = URL.createObjectURL(new Blob([submissionCSV], { type: 'text/csv' }));
         submissionLink.download = 'titanic_submission.csv';
-        submissionLink.innerHTML = '<button style="margin: 5px;">📥 Download submission.csv</button>';
+        submissionLink.innerHTML = '<button style="margin: 5px;">Download submission.csv</button>';
         
         const probabilitiesLink = document.createElement('a');
-        probabilitiesLink.href = URL.createObjectURL(new Blob([probabilitiesCSV], { type: 'text/csv;charset=utf-8;' }));
+        probabilitiesLink.href = URL.createObjectURL(new Blob([probabilitiesCSV], { type: 'text/csv' }));
         probabilitiesLink.download = 'titanic_probabilities.csv';
-        probabilitiesLink.innerHTML = '<button style="margin: 5px;">📊 Download probabilities.csv</button>';
+        probabilitiesLink.innerHTML = '<button style="margin: 5px;">Download probabilities.csv</button>';
         
         statusDiv.innerHTML = `
-            <div class="success-message">
-                <h4>✅ Export completed!</h4>
-                <p>Files ready for download:</p>
-                <div style="margin: 15px 0;">
+            <div style="padding: 15px; background: #d4edda; border-radius: 5px;">
+                <p><strong>Export completed!</strong></p>
+                <p>Download the files:</p>
+                <div style="margin: 10px 0;">
                     ${submissionLink.outerHTML}
                     ${probabilitiesLink.outerHTML}
                 </div>
                 <p><strong>submission.csv</strong> - Kaggle submission format (PassengerId, Survived)</p>
-                <p><strong>probabilities.csv</strong> - Raw prediction probabilities for analysis</p>
-                <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
-                    Note: Files will download automatically. If not, click the buttons above.
-                </p>
+                <p><strong>probabilities.csv</strong> - Raw prediction probabilities</p>
             </div>
         `;
         
-        // Trigger downloads automatically
+        // Auto-download files
         setTimeout(() => {
             submissionLink.click();
             setTimeout(() => probabilitiesLink.click(), 100);
         }, 500);
         
     } catch (error) {
-        statusDiv.innerHTML = `<div class="error-message">Error during export: ${error.message}</div>`;
-        console.error('Export error:', error);
+        statusDiv.innerHTML = `Error during export: ${error.message}`;
+        console.error(error);
     }
 }
 
-// Sigmoid visualization
+// Visualize sigmoid function
 function visualizeSigmoid() {
     const sigmoidDiv = document.getElementById('sigmoid-vis');
     sigmoidDiv.innerHTML = `
-        <div class="success-message">
-            <h3>Sigmoid Activation Function</h3>
-            <p>The sigmoid function converts any real number to a value between 0 and 1:</p>
-            <p style="text-align: center; font-size: 1.2em;"><strong>σ(z) = 1 / (1 + e^(-z))</strong></p>
-            <div style="position: relative; width: 100%; max-width: 500px; margin: 20px auto;">
-                <canvas id="sigmoid-canvas" width="500" height="300" style="border: 1px solid #ddd; background: white;"></canvas>
-            </div>
-            <div style="margin-top: 20px;">
-                <h4>Properties:</h4>
-                <ul>
-                    <li><strong>Output range:</strong> (0, 1) - perfect for probability</li>
-                    <li><strong>S-shaped curve</strong> (sigmoid means "S-shaped")</li>
-                    <li><strong>Derivative:</strong> σ'(z) = σ(z) × (1 - σ(z)) - easy to compute for backpropagation</li>
-                    <li><strong>Used as</strong> the final activation in binary classification</li>
-                    <li><strong>Interpretation:</strong> Output > 0.5 → Class 1, Output < 0.5 → Class 0</li>
-                </ul>
-                <p>In our Titanic model, the sigmoid takes the weighted sum of the hidden layer outputs and produces a survival probability.</p>
-            </div>
+        <h3>Sigmoid Activation Function</h3>
+        <p>The sigmoid function converts any real number to a value between 0 and 1:</p>
+        <p style="text-align: center; font-size: 1.2em;"><strong>σ(z) = 1 / (1 + e^(-z))</strong></p>
+        <div style="position: relative; width: 100%; max-width: 500px; margin: 20px auto;">
+            <canvas id="sigmoid-canvas" width="500" height="300" style="border: 1px solid #ddd;"></canvas>
+        </div>
+        <div style="padding: 15px; background: #f8f9fa; border-radius: 5px; margin-top: 20px;">
+            <h4>Properties:</h4>
+            <ul>
+                <li><strong>Output range:</strong> (0, 1) - perfect for probability</li>
+                <li><strong>S-shaped curve</strong> (sigmoid means "S-shaped")</li>
+                <li><strong>Derivative:</strong> σ'(z) = σ(z) × (1 - σ(z)) - easy to compute for backpropagation</li>
+                <li><strong>Used as</strong> the final activation in binary classification</li>
+                <li><strong>Interpretation:</strong> Output > 0.5 → Class 1, Output < 0.5 → Class 0</li>
+            </ul>
+            <p>In our Titanic model, the sigmoid takes the weighted sum of the hidden layer outputs and produces a survival probability.</p>
         </div>
     `;
     
-    // Draw sigmoid function
+    // Draw the sigmoid function
     setTimeout(() => {
         const canvas = document.getElementById('sigmoid-canvas');
         if (!canvas) return;
@@ -1144,18 +1104,17 @@ function visualizeSigmoid() {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-        const centerX = width / 2;
-        const centerY = height / 2;
+        const padding = 50;
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
         
         // Draw axes
         ctx.beginPath();
-        ctx.moveTo(50, centerY);
-        ctx.lineTo(width - 50, centerY);
-        ctx.moveTo(centerX, 20);
-        ctx.lineTo(centerX, height - 20);
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(width - padding, height - padding);
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(padding, padding);
         ctx.strokeStyle = '#333';
         ctx.lineWidth = 1;
         ctx.stroke();
@@ -1163,19 +1122,34 @@ function visualizeSigmoid() {
         // Draw labels
         ctx.font = '14px Arial';
         ctx.fillStyle = '#333';
-        ctx.fillText('z (weighted input)', width - 60, centerY + 20);
+        ctx.fillText('z (input)', width - 60, height - padding + 20);
         ctx.save();
-        ctx.translate(centerX - 30, 15);
+        ctx.translate(padding - 30, height / 2);
         ctx.rotate(-Math.PI/2);
-        ctx.fillText('σ(z) (output probability)', 0, 0);
+        ctx.fillText('σ(z) (output)', 0, 0);
         ctx.restore();
+        
+        // Draw grid
+        ctx.strokeStyle = '#eee';
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i <= 1; i += 0.2) {
+            const y = padding + (1 - i) * (height - 2 * padding);
+            ctx.beginPath();
+            ctx.moveTo(padding, y);
+            ctx.lineTo(width - padding, y);
+            ctx.stroke();
+            
+            // Y-axis labels
+            ctx.fillStyle = '#666';
+            ctx.fillText(i.toFixed(1), padding - 25, y + 4);
+        }
         
         // Draw sigmoid curve
         ctx.beginPath();
         for (let x = -6; x <= 6; x += 0.1) {
             const y = 1 / (1 + Math.exp(-x));
-            const canvasX = centerX + x * 40;
-            const canvasY = centerY - y * 100;
+            const canvasX = padding + (x + 6) * (width - 2 * padding) / 12;
+            const canvasY = height - padding - y * (height - 2 * padding);
             
             if (x === -6) {
                 ctx.moveTo(canvasX, canvasY);
@@ -1184,40 +1158,38 @@ function visualizeSigmoid() {
             }
         }
         ctx.strokeStyle = '#1a73e8';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 2;
         ctx.stroke();
         
-        // Mark key points and decision boundary
-        ctx.fillStyle = '#1a73e8';
-        ctx.font = '12px Arial';
+        // Mark key points
+        const keyPoints = [-3, 0, 3];
+        keyPoints.forEach(x => {
+            const y = 1 / (1 + Math.exp(-x));
+            const canvasX = padding + (x + 6) * (width - 2 * padding) / 12;
+            const canvasY = height - padding - y * (height - 2 * padding);
+            
+            ctx.beginPath();
+            ctx.arc(canvasX, canvasY, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+            
+            ctx.fillStyle = '#333';
+            ctx.fillText(`σ(${x}) = ${y.toFixed(3)}`, canvasX + 10, canvasY - 10);
+        });
         
-        // Decision boundary at z=0, σ(0)=0.5
-        const zeroX = centerX;
-        const zeroY = centerY - 0.5 * 100;
+        // Draw decision boundary at y=0.5
+        const decisionY = height - padding - 0.5 * (height - 2 * padding);
         ctx.beginPath();
-        ctx.arc(zeroX, zeroY, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillText('σ(0)=0.5 (Decision Boundary)', zeroX + 10, zeroY - 10);
-        
-        // Draw horizontal line at y=0.5
-        ctx.beginPath();
-        ctx.moveTo(50, zeroY);
-        ctx.lineTo(width - 50, zeroY);
+        ctx.moveTo(padding, decisionY);
+        ctx.lineTo(width - padding, decisionY);
         ctx.strokeStyle = '#999';
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
         
-        // Draw regions
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-        ctx.fillRect(50, zeroY, zeroX - 50, 100);
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-        ctx.fillRect(zeroX, zeroY, width - 50 - zeroX, 100);
-        
         ctx.fillStyle = '#333';
-        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', 100, zeroY + 60);
-        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', zeroX + 30, zeroY + 60);
+        ctx.fillText('Decision boundary (0.5)', padding + 10, decisionY - 10);
         
     }, 100);
 }
@@ -1230,36 +1202,53 @@ async function analyzeFeatureImportance() {
     }
     
     const statusDiv = document.getElementById('importance-status');
-    statusDiv.innerHTML = '<div class="processing">Analyzing feature importance...</div>';
+    statusDiv.innerHTML = 'Analyzing feature importance...';
     
     try {
         // Get feature names
         const featureNames = getFeatureNames();
         
-        // Compute simple feature importance using permutation
-        const importanceScores = await computePermutationImportance(featureNames);
+        // Get the weights from the first layer
+        const weights = model.layers[0].getWeights()[0];
+        const weightArray = await weights.array();
+        
+        // Calculate importance as average absolute weight for each input feature
+        const importance = [];
+        for (let i = 0; i < weightArray.length; i++) {
+            let sum = 0;
+            for (let j = 0; j < weightArray[i].length; j++) {
+                sum += Math.abs(weightArray[i][j]);
+            }
+            importance.push(sum / weightArray[i].length);
+        }
         
         // Prepare data for visualization
         const importanceData = featureNames.map((name, index) => ({
             feature: name,
-            importance: importanceScores[index]
+            importance: importance[index] || 0
         }));
         
-        // Sort by absolute importance (descending)
-        importanceData.sort((a, b) => Math.abs(b.importance) - Math.abs(a.importance));
+        // Sort by importance (descending)
+        importanceData.sort((a, b) => b.importance - a.importance);
         
         // Display results
         statusDiv.innerHTML = '<h3>Feature Importance Analysis</h3>';
         
         // Create table
         const table = document.createElement('table');
-        table.className = 'importance-table';
+        table.style.borderCollapse = 'collapse';
+        table.style.width = '100%';
+        table.style.margin = '10px 0';
         
-        // Header
+        // Header row
         const headerRow = document.createElement('tr');
-        ['Rank', 'Feature', 'Importance Score', 'Direction'].forEach(header => {
+        ['Rank', 'Feature', 'Importance Score'].forEach(header => {
             const th = document.createElement('th');
             th.textContent = header;
+            th.style.border = '1px solid #ddd';
+            th.style.padding = '8px';
+            th.style.textAlign = 'left';
+            th.style.backgroundColor = '#f2f2f2';
             headerRow.appendChild(th);
         });
         table.appendChild(headerRow);
@@ -1271,25 +1260,32 @@ async function analyzeFeatureImportance() {
             // Rank
             const rankCell = document.createElement('td');
             rankCell.textContent = index + 1;
+            rankCell.style.border = '1px solid #ddd';
+            rankCell.style.padding = '8px';
             row.appendChild(rankCell);
             
             // Feature
             const featureCell = document.createElement('td');
             featureCell.textContent = item.feature;
+            featureCell.style.border = '1px solid #ddd';
+            featureCell.style.padding = '8px';
             row.appendChild(featureCell);
             
             // Importance Score
             const importanceCell = document.createElement('td');
-            importanceCell.textContent = Math.abs(item.importance).toFixed(4);
-            importanceCell.style.fontWeight = 'bold';
-            importanceCell.style.color = item.importance > 0 ? 'green' : '#d32f2f';
-            row.appendChild(importanceCell);
+            importanceCell.textContent = item.importance.toFixed(6);
+            importanceCell.style.border = '1px solid #ddd';
+            importanceCell.style.padding = '8px';
             
-            // Direction
-            const directionCell = document.createElement('td');
-            directionCell.textContent = item.importance > 0 ? 'Positive' : 'Negative';
-            directionCell.style.color = item.importance > 0 ? 'green' : '#d32f2f';
-            row.appendChild(directionCell);
+            // Color based on importance
+            if (item.importance > 0.3) {
+                importanceCell.style.color = 'green';
+                importanceCell.style.fontWeight = 'bold';
+            } else if (item.importance > 0.1) {
+                importanceCell.style.color = '#ff9800';
+            }
+            
+            row.appendChild(importanceCell);
             
             table.appendChild(row);
         });
@@ -1301,22 +1297,23 @@ async function analyzeFeatureImportance() {
         
         // Explanation
         statusDiv.innerHTML += `
-            <div class="note" style="margin-top: 20px;">
+            <div style="padding: 15px; background: #f8f9fa; border-radius: 5px; margin-top: 20px;">
                 <h4>How Feature Importance is Calculated:</h4>
+                <p>Feature importance is calculated based on the weights of the neural network:</p>
                 <ol>
-                    <li>For each feature, we randomly shuffle its values in the validation set</li>
-                    <li>We measure how much the model's accuracy decreases after shuffling</li>
-                    <li>Greater decrease = more important feature for prediction</li>
+                    <li>For each input feature, we look at all connections from that feature to the hidden layer</li>
+                    <li>We take the absolute value of each weight (ignoring direction)</li>
+                    <li>We average these absolute weights to get an importance score</li>
+                    <li>Higher scores mean the feature has stronger connections in the network</li>
                 </ol>
-                <p><strong>Positive importance:</strong> Feature helps predict survival (e.g., being female)</p>
-                <p><strong>Negative importance:</strong> Feature helps predict non-survival (e.g., being in 3rd class)</p>
-                <p><em>Note: This is a simplified permutation importance. For exact values, use scikit-learn in Python.</em></p>
+                <p><strong>Interpretation:</strong> Features with higher importance have more influence on the model's predictions.</p>
+                <p><em>Note: This is a simplified importance measure. For production, use permutation importance or SHAP values.</em></p>
             </div>
         `;
         
     } catch (error) {
-        statusDiv.innerHTML = `<div class="error-message">Error analyzing feature importance: ${error.message}</div>`;
-        console.error('Feature importance error:', error);
+        statusDiv.innerHTML = `Error analyzing feature importance: ${error.message}`;
+        console.error(error);
     }
 }
 
@@ -1324,88 +1321,24 @@ async function analyzeFeatureImportance() {
 function getFeatureNames() {
     const featureNames = [];
     
-    // Numerical features (standardized)
+    // Numerical features
     featureNames.push('Age (standardized)', 'Fare (standardized)', 'SibSp', 'Parch');
     
     // One-hot encoded Pclass
     featureNames.push('Pclass 1', 'Pclass 2', 'Pclass 3');
     
     // One-hot encoded Sex
-    featureNames.push('Male', 'Female');
+    featureNames.push('Sex: Male', 'Sex: Female');
     
     // One-hot encoded Embarked
-    featureNames.push('Embarked C', 'Embarked Q', 'Embarked S');
+    featureNames.push('Embarked: C', 'Embarked: Q', 'Embarked: S');
     
     // Optional family features
     if (document.getElementById('add-family-features').checked) {
-        featureNames.push('FamilySize', 'IsAlone');
+        featureNames.push('Family Size', 'Is Alone');
     }
     
     return featureNames;
-}
-
-// Compute permutation importance
-async function computePermutationImportance(featureNames) {
-    // Get baseline accuracy
-    const baselinePred = model.predict(validationData);
-    const baselineProbs = await baselinePred.array();
-    const baselineLabels = await validationLabels.array();
-    
-    let baselineCorrect = 0;
-    for (let i = 0; i < baselineProbs.length; i++) {
-        const pred = (Array.isArray(baselineProbs[i]) ? baselineProbs[i][0] : baselineProbs[i]) >= 0.5 ? 1 : 0;
-        const actual = Array.isArray(baselineLabels[i]) ? baselineLabels[i][0] : baselineLabels[i];
-        if (pred === actual) baselineCorrect++;
-    }
-    const baselineAcc = baselineCorrect / baselineProbs.length;
-    
-    // Compute importance for each feature
-    const importanceScores = new Array(featureNames.length).fill(0);
-    const validationDataArray = await validationData.array();
-    
-    // For each feature, shuffle and measure accuracy drop
-    for (let featIdx = 0; featIdx < featureNames.length; featIdx++) {
-        // Create shuffled validation data
-        const shuffledData = JSON.parse(JSON.stringify(validationDataArray)); // Deep copy
-        const shuffledCol = shuffledData.map(row => row[featIdx]);
-        
-        // Shuffle the column (Fisher-Yates shuffle)
-        for (let i = shuffledCol.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffledCol[i], shuffledCol[j]] = [shuffledCol[j], shuffledCol[i]];
-        }
-        
-        // Apply shuffle
-        shuffledData.forEach((row, i) => {
-            row[featIdx] = shuffledCol[i];
-        });
-        
-        // Predict with shuffled data
-        const shuffledTensor = tf.tensor2d(shuffledData);
-        const shuffledPred = model.predict(shuffledTensor);
-        const shuffledProbs = await shuffledPred.array();
-        
-        // Calculate accuracy
-        let shuffledCorrect = 0;
-        for (let i = 0; i < shuffledProbs.length; i++) {
-            const pred = (Array.isArray(shuffledProbs[i]) ? shuffledProbs[i][0] : shuffledProbs[i]) >= 0.5 ? 1 : 0;
-            const actual = Array.isArray(baselineLabels[i]) ? baselineLabels[i][0] : baselineLabels[i];
-            if (pred === actual) shuffledCorrect++;
-        }
-        const shuffledAcc = shuffledCorrect / shuffledProbs.length;
-        
-        // Importance = decrease in accuracy (can be negative if shuffling improves accuracy)
-        importanceScores[featIdx] = baselineAcc - shuffledAcc;
-        
-        // Clean up
-        shuffledTensor.dispose();
-        shuffledPred.dispose();
-    }
-    
-    // Clean up
-    baselinePred.dispose();
-    
-    return importanceScores;
 }
 
 // Create feature importance chart
@@ -1413,11 +1346,9 @@ function createFeatureImportanceChart(importanceData) {
     const container = document.getElementById('importance-status');
     
     const chartHTML = `
-        <div style="margin: 20px 0;">
-            <h4>Top Features Visualization</h4>
-            <div style="position: relative; width: 100%; max-width: 600px; margin: 0 auto;">
-                <canvas id="importance-canvas" width="600" height="400" style="border: 1px solid #ddd; background: white;"></canvas>
-            </div>
+        <h4>Top Features Visualization</h4>
+        <div style="position: relative; width: 100%; max-width: 600px; margin: 20px auto;">
+            <canvas id="importance-canvas" width="600" height="400" style="border: 1px solid #ddd;"></canvas>
         </div>
     `;
     
@@ -1430,29 +1361,25 @@ function createFeatureImportanceChart(importanceData) {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-        const padding = { top: 40, right: 100, bottom: 60, left: 150 };
+        const padding = { top: 40, right: 20, bottom: 60, left: 150 };
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
         
-        // Calculate bar dimensions
-        const barHeight = 25;
-        const maxImportance = Math.max(...importanceData.map(d => Math.abs(d.importance)));
-        const scale = (width - padding.left - padding.right) / (maxImportance * 2);
+        // Calculate dimensions
+        const maxImportance = Math.max(...importanceData.map(d => d.importance));
+        const barHeight = 30;
+        const gap = 10;
+        const chartWidth = width - padding.left - padding.right;
         
         // Draw bars
         importanceData.forEach((item, index) => {
-            const y = padding.top + index * (barHeight + 10);
-            const barWidth = Math.abs(item.importance) * scale;
-            const x = padding.left + (item.importance > 0 ? maxImportance * scale : (maxImportance - Math.abs(item.importance)) * scale);
+            const y = padding.top + index * (barHeight + gap);
+            const barWidth = (item.importance / maxImportance) * chartWidth * 0.8;
             
             // Draw bar
-            ctx.fillStyle = item.importance > 0 ? 'rgba(76, 175, 80, 0.8)' : 'rgba(244, 67, 54, 0.8)';
-            if (item.importance > 0) {
-                ctx.fillRect(x, y, barWidth, barHeight);
-            } else {
-                ctx.fillRect(x - barWidth, y, barWidth, barHeight);
-            }
+            ctx.fillStyle = index % 2 === 0 ? '#1a73e8' : '#4285f4';
+            ctx.fillRect(padding.left, y, barWidth, barHeight);
             
             // Draw feature name
             ctx.fillStyle = '#333';
@@ -1460,50 +1387,38 @@ function createFeatureImportanceChart(importanceData) {
             ctx.textAlign = 'right';
             ctx.fillText(item.feature, padding.left - 10, y + barHeight / 2 + 4);
             
-            // Draw value
-            ctx.fillStyle = item.importance > 0 ? '#2e7d32' : '#c62828';
+            // Draw importance value
+            ctx.fillStyle = '#333';
             ctx.font = 'bold 11px Arial';
-            ctx.textAlign = item.importance > 0 ? 'left' : 'right';
-            const valueX = item.importance > 0 ? x + barWidth + 5 : x - barWidth - 5;
-            ctx.fillText(item.importance.toFixed(4), valueX, y + barHeight / 2 + 4);
+            ctx.textAlign = 'left';
+            ctx.fillText(item.importance.toFixed(4), padding.left + barWidth + 10, y + barHeight / 2 + 4);
         });
         
-        // Draw center line
-        ctx.beginPath();
-        const centerX = padding.left + maxImportance * scale;
-        ctx.moveTo(centerX, padding.top - 10);
-        ctx.lineTo(centerX, padding.top + importanceData.length * (barHeight + 10));
-        ctx.strokeStyle = '#999';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        
-        // Draw title and labels
+        // Draw title
         ctx.fillStyle = '#333';
-        ctx.font = 'bold 14px Arial';
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Feature Importance (Permutation)', width / 2, 20);
+        ctx.fillText('Feature Importance', width / 2, 20);
         
+        // Draw x-axis label
         ctx.font = '12px Arial';
-        ctx.fillText('Negative Impact (Predicts Not Survived)', centerX - 100, padding.top + importanceData.length * (barHeight + 10) + 30);
-        ctx.fillText('Positive Impact (Predicts Survived)', centerX + 100, padding.top + importanceData.length * (barHeight + 10) + 30);
-        
-        // Draw legend
-        ctx.fillStyle = 'rgba(244, 67, 54, 0.8)';
-        ctx.fillRect(width - 120, 30, 15, 15);
-        ctx.fillStyle = 'rgba(76, 175, 80, 0.8)';
-        ctx.fillRect(width - 120, 50, 15, 15);
-        
-        ctx.fillStyle = '#333';
-        ctx.font = '11px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText('Negative (Not Survived)', width - 100, 42);
-        ctx.fillText('Positive (Survived)', width - 100, 62);
+        ctx.fillText('Importance Score', width / 2, height - 10);
         
     }, 100);
 }
 
 // Initialize the application
-window.addEventListener('DOMContentLoaded', function() {
-    // Add any initialization code here
+document.addEventListener('DOMContentLoaded', function() {
     console.log('Titanic Survival Classifier initialized');
+    
+    // Add event listeners for new buttons
+    const sigmoidBtn = document.getElementById('sigmoid-btn');
+    if (sigmoidBtn) {
+        sigmoidBtn.addEventListener('click', visualizeSigmoid);
+    }
+    
+    const importanceBtn = document.getElementById('importance-btn');
+    if (importanceBtn) {
+        importanceBtn.addEventListener('click', analyzeFeatureImportance);
+    }
 });
