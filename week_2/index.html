@@ -303,6 +303,12 @@
             margin-right: 10px;
             font-weight: bold;
         }
+        #roc-chart {
+            margin: 20px 0;
+        }
+        #sigmoid-vis, #importance-status {
+            margin-top: 20px;
+        }
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -411,7 +417,9 @@
 
         <section id="sigmoid">
             <h2><span class="step-number">6</span> Sigmoid Activation</h2>
-            <button onclick="visualizeSigmoid()">📊 Visualize Sigmoid Function</button>
+            <button id="sigmoid-btn" onclick="visualizeSigmoid()" disabled>
+                <span class="status-indicator status-not-ready"></span>Visualize Sigmoid Function
+            </button>
             <div id="sigmoid-vis"></div>
             <div class="note">
                 <strong>About Sigmoid:</strong> Converts any real number to a value between 0 and 1. 
@@ -460,9 +468,8 @@
             </button>
             <div id="importance-status"></div>
             <div class="note">
-                <strong>How it works:</strong> Feature importance is calculated using permutation importance. 
-                Each feature is shuffled, and we measure how much the model's accuracy decreases. 
-                Greater decrease = more important feature.
+                <strong>How it works:</strong> Feature importance is calculated based on neural network weights. 
+                Features with stronger connections (higher absolute weights) are more important for predictions.
             </div>
         </section>
 
@@ -492,7 +499,6 @@
                 <ul>
                     <li><code>submission.csv</code>: Kaggle submission format (PassengerId, Survived)</li>
                     <li><code>probabilities.csv</code>: Raw prediction probabilities</li>
-                    <li>Model files for reuse</li>
                 </ul>
             </div>
         </section>
