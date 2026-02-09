@@ -58,95 +58,88 @@ function readFile(file) {
     });
 }
 
-// Parse CSV text to array of objects with proper quote handling
+// Parse CSV text to array of objects
 function parseCSV(csvText) {
     const lines = csvText.split('\n').filter(line => line.trim() !== '');
     if (lines.length === 0) return [];
     
-    const results = [];
     const headers = parseCSVLine(lines[0]);
+    const results = [];
     
     for (let i = 1; i < lines.length; i++) {
         const values = parseCSVLine(lines[i]);
-        if (values.length !== headers.length) {
-            // If line has fewer values than headers, pad with null
-            while (values.length < headers.length) {
-                values.push(null);
-            }
-            console.warn(`Line ${i+1} has ${values.length} values, expected ${headers.length}.`);
-        }
-        
         const obj = {};
+        
         headers.forEach((header, index) => {
             let value = index < values.length ? values[index] : null;
             
-            // Convert to null for empty strings
+            // Handle empty strings
             if (value === '' || value === null || value === undefined) {
                 obj[header] = null;
             } 
-            // Try to convert to number if it looks like a number
-            else if (!isNaN(value) && value !== '') {
+            // Convert numeric values
+            else if (!isNaN(value) && value.trim() !== '') {
                 const num = parseFloat(value);
-                if (!isNaN(num) && isFinite(num)) {
-                    obj[header] = num;
-                } else {
-                    obj[header] = value;
-                }
-            } else {
+                obj[header] = isNaN(num) ? value : num;
+            } 
+            // Keep string values
+            else {
                 obj[header] = value;
             }
         });
+        
         results.push(obj);
     }
     
     return results;
 }
 
-// Parse a single CSV line, handling quoted fields with commas
+// Parse a single CSV line, properly handling quoted fields with commas
 function parseCSVLine(line) {
-    const values = [];
-    let currentValue = '';
-    let insideQuotes = false;
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    let i = 0;
     
-    for (let i = 0; i < line.length; i++) {
+    while (i < line.length) {
         const char = line[i];
         
         if (char === '"') {
-            if (insideQuotes && i + 1 < line.length && line[i + 1] === '"') {
-                // Escaped quote inside quotes
-                currentValue += '"';
-                i++;
+            // Check if this is an escaped quote (two quotes in a row)
+            if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+                current += '"';
+                i += 2;
+                continue;
             } else {
-                // Toggle quote state
-                insideQuotes = !insideQuotes;
+                inQuotes = !inQuotes;
+                i++;
+                continue;
             }
-        } else if (char === ',' && !insideQuotes) {
-            // End of field
-            values.push(currentValue);
-            currentValue = '';
-        } else {
-            currentValue += char;
         }
+        
+        if (char === ',' && !inQuotes) {
+            result.push(current);
+            current = '';
+            i++;
+            continue;
+        }
+        
+        current += char;
+        i++;
     }
     
-    // Add the last field
-    values.push(currentValue);
+    // Don't forget the last field
+    result.push(current);
     
-    // Clean up quotes and trim
-    return values.map(value => {
-        if (value.startsWith('"') && value.endsWith('"')) {
-            value = value.substring(1, value.length - 1);
-        }
-        // Replace escaped quotes
-        value = value.replace(/""/g, '"');
-        return value.trim();
-    });
+    return result.map(field => field.trim());
 }
 
 // Create a preview table from data
 function createPreviewTable(data) {
     const table = document.createElement('table');
     table.className = 'data-table';
+    
+    if (data.length === 0) return table;
     
     // Create header row
     const headerRow = document.createElement('tr');
@@ -162,13 +155,20 @@ function createPreviewTable(data) {
         const tr = document.createElement('tr');
         Object.values(row).forEach(value => {
             const td = document.createElement('td');
-            if (value === null || value === undefined) {
+            if (value === null || value === undefined || value === '') {
                 td.textContent = 'NULL';
                 td.style.color = '#999';
+                td.style.fontStyle = 'italic';
             } else {
                 td.textContent = typeof value === 'number' ? 
                     (Number.isInteger(value) ? value : value.toFixed(2)) : 
                     String(value);
+                
+                // Truncate long strings
+                if (String(value).length > 50) {
+                    td.textContent = String(value).substring(0, 50) + '...';
+                    td.title = value;
+                }
             }
             tr.appendChild(td);
         });
@@ -178,9 +178,149 @@ function createPreviewTable(data) {
     return table;
 }
 
+// Inspect the loaded data
+function inspectData() {
+    if (!trainData || trainData.length === 0) {
+        alert('Please load data first.');
+        return;
+    }
+    
+    // Show data preview
+    const previewDiv = document.getElementById('data-preview');
+    previewDiv.innerHTML = '<h3>Data Preview (First 10 Rows)</h3>';
+    
+    // Debug: Show what data looks like
+    console.log('First row of trainData:', trainData[0]);
+    console.log('All keys:', Object.keys(trainData[0]));
+    
+    // Create table with all available columns
+    previewDiv.appendChild(createPreviewTable(trainData.slice(0, 10)));
+    
+    // Calculate and show data statistics
+    const statsDiv = document.getElementById('data-stats');
+    statsDiv.innerHTML = '<h3>Data Statistics</h3>';
+    
+    // Basic statistics
+    const columns = Object.keys(trainData[0]);
+    const shapeInfo = `Dataset shape: ${trainData.length} rows × ${columns.length} columns`;
+    const survivalCount = trainData.filter(row => row[TARGET_FEATURE] === 1).length;
+    const survivalRate = (survivalCount / trainData.length * 100).toFixed(2);
+    const targetInfo = `Survival rate: ${survivalCount}/${trainData.length} (${survivalRate}%)`;
+    
+    // Calculate missing values
+    let missingInfo = '<h4>Missing Values Percentage:</h4><ul>';
+    columns.forEach(feature => {
+        const missingCount = trainData.filter(row => 
+            row[feature] === null || 
+            row[feature] === undefined || 
+            row[feature] === '' ||
+            (typeof row[feature] === 'number' && isNaN(row[feature]))
+        ).length;
+        const missingPercent = (missingCount / trainData.length * 100).toFixed(2);
+        missingInfo += `<li><strong>${feature}:</strong> ${missingPercent}% (${missingCount} missing)</li>`;
+    });
+    missingInfo += '</ul>';
+    
+    // Feature types
+    let typeInfo = '<h4>Feature Types:</h4><ul>';
+    columns.forEach(feature => {
+        const firstValue = trainData[0][feature];
+        const type = firstValue === null ? 'null' : typeof firstValue;
+        typeInfo += `<li><strong>${feature}:</strong> ${type}</li>`;
+    });
+    typeInfo += '</ul>';
+    
+    statsDiv.innerHTML += `
+        <div style="margin: 15px 0;">
+            <p><strong>${shapeInfo}</strong></p>
+            <p><strong>${targetInfo}</strong></p>
+        </div>
+        ${missingInfo}
+        ${typeInfo}
+    `;
+    
+    // Create simple visualizations
+    createSimpleCharts();
+    
+    // Enable the preprocess button
+    document.getElementById('preprocess-btn').disabled = false;
+}
+
+// Create simple charts using HTML/CSS
+function createSimpleCharts() {
+    const chartsDiv = document.getElementById('charts');
+    chartsDiv.innerHTML = '<h3>Data Visualizations</h3>';
+    
+    // Survival by Sex
+    const survivalBySex = {};
+    trainData.forEach(row => {
+        if (row.Sex !== null && row.Sex !== undefined && row[TARGET_FEATURE] !== null) {
+            const sex = String(row.Sex).trim();
+            if (!survivalBySex[sex]) {
+                survivalBySex[sex] = { survived: 0, total: 0 };
+            }
+            survivalBySex[sex].total++;
+            if (row[TARGET_FEATURE] === 1) {
+                survivalBySex[sex].survived++;
+            }
+        }
+    });
+    
+    let sexChartHTML = '<div class="chart-container"><h4>Survival Rate by Sex</h4>';
+    Object.entries(survivalBySex).forEach(([sex, stats]) => {
+        if (stats.total > 0) {
+            const rate = (stats.survived / stats.total) * 100;
+            sexChartHTML += `
+                <div class="chart-bar">
+                    <div class="bar-label">${sex}</div>
+                    <div class="bar-bg">
+                        <div class="bar-fill" style="width: ${rate}%; background-color: ${sex === 'female' ? '#ff6b6b' : '#4ecdc4'};"></div>
+                    </div>
+                    <div class="bar-value">${rate.toFixed(1)}% (${stats.survived}/${stats.total})</div>
+                </div>
+            `;
+        }
+    });
+    sexChartHTML += '</div>';
+    
+    // Survival by Pclass
+    const survivalByPclass = {};
+    trainData.forEach(row => {
+        if (row.Pclass !== null && row.Pclass !== undefined && row[TARGET_FEATURE] !== null) {
+            const pclass = String(row.Pclass);
+            if (!survivalByPclass[pclass]) {
+                survivalByPclass[pclass] = { survived: 0, total: 0 };
+            }
+            survivalByPclass[pclass].total++;
+            if (row[TARGET_FEATURE] === 1) {
+                survivalByPclass[pclass].survived++;
+            }
+        }
+    });
+    
+    let pclassChartHTML = '<div class="chart-container"><h4>Survival Rate by Passenger Class</h4>';
+    Object.entries(survivalByPclass).forEach(([pclass, stats]) => {
+        if (stats.total > 0) {
+            const rate = (stats.survived / stats.total) * 100;
+            pclassChartHTML += `
+                <div class="chart-bar">
+                    <div class="bar-label">Class ${pclass}</div>
+                    <div class="bar-bg">
+                        <div class="bar-fill" style="width: ${rate}%; background-color: ${pclass === '1' ? '#1a73e8' : pclass === '2' ? '#34a853' : '#ea4335'};"></div>
+                    </div>
+                    <div class="bar-value">${rate.toFixed(1)}% (${stats.survived}/${stats.total})</div>
+                </div>
+            `;
+        }
+    });
+    pclassChartHTML += '</div>';
+    
+    chartsDiv.innerHTML += sexChartHTML + pclassChartHTML;
+}
+
 // Calculate median of an array
 function calculateMedian(values) {
-    const filtered = values.filter(v => v !== null && v !== undefined);
+    const filtered = values.filter(v => v !== null && v !== undefined && !isNaN(v));
     if (filtered.length === 0) return 0;
     
     filtered.sort((a, b) => a - b);
@@ -203,10 +343,11 @@ function calculateMode(values) {
     let mode = filtered[0];
     
     filtered.forEach(value => {
-        frequency[value] = (frequency[value] || 0) + 1;
-        if (frequency[value] > maxCount) {
-            maxCount = frequency[value];
-            mode = value;
+        const val = String(value);
+        frequency[val] = (frequency[val] || 0) + 1;
+        if (frequency[val] > maxCount) {
+            maxCount = frequency[val];
+            mode = val;
         }
     });
     
@@ -215,8 +356,8 @@ function calculateMode(values) {
 
 // Calculate standard deviation of an array
 function calculateStdDev(values) {
-    const filtered = values.filter(v => v !== null && v !== undefined);
-    if (filtered.length === 0) return 1;
+    const filtered = values.filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (filtered.length <= 1) return 1;
     
     const mean = filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
     const squaredDiffs = filtered.map(value => Math.pow(value - mean, 2));
@@ -227,7 +368,7 @@ function calculateStdDev(values) {
 // One-hot encode a value
 function oneHotEncode(value, categories) {
     const encoding = new Array(categories.length).fill(0);
-    const index = categories.indexOf(value);
+    const index = categories.indexOf(String(value));
     if (index !== -1) {
         encoding[index] = 1;
     }
@@ -237,20 +378,24 @@ function oneHotEncode(value, categories) {
 // Extract features from a row with imputation and normalization
 function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
     // Impute missing values
-    const age = row.Age !== null && row.Age !== undefined ? row.Age : ageMedian;
-    const fare = row.Fare !== null && row.Fare !== undefined ? row.Fare : fareMedian;
-    const embarked = row.Embarked !== null && row.Embarked !== undefined ? row.Embarked : embarkedMode;
+    const age = (row.Age !== null && row.Age !== undefined && !isNaN(row.Age)) ? row.Age : ageMedian;
+    const fare = (row.Fare !== null && row.Fare !== undefined && !isNaN(row.Fare)) ? row.Fare : fareMedian;
+    const embarked = (row.Embarked !== null && row.Embarked !== undefined && row.Embarked !== '') ? 
+        String(row.Embarked).trim() : embarkedMode;
     
-    // Get standard deviation for normalization
-    const ageStd = calculateStdDev(trainData.map(r => r.Age).filter(a => a !== null && a !== undefined));
-    const fareStd = calculateStdDev(trainData.map(r => r.Fare).filter(f => f !== null && f !== undefined));
+    // Get standard deviation for normalization (only from training data)
+    const ageValues = trainData.map(r => r.Age).filter(a => a !== null && a !== undefined && !isNaN(a));
+    const fareValues = trainData.map(r => r.Fare).filter(f => f !== null && f !== undefined && !isNaN(f));
+    
+    const ageStd = calculateStdDev(ageValues);
+    const fareStd = calculateStdDev(fareValues);
     
     // Standardize numerical features (handle division by zero)
-    const standardizedAge = ageStd !== 0 ? (age - ageMedian) / ageStd : 0;
-    const standardizedFare = fareStd !== 0 ? (fare - fareMedian) / fareStd : 0;
+    const standardizedAge = ageStd > 0 ? (age - ageMedian) / ageStd : 0;
+    const standardizedFare = fareStd > 0 ? (fare - fareMedian) / fareStd : 0;
     
     // One-hot encode categorical features
-    const pclassOneHot = oneHotEncode(row.Pclass, [1, 2, 3]);
+    const pclassOneHot = oneHotEncode(row.Pclass, ['1', '2', '3']);
     const sexOneHot = oneHotEncode(row.Sex, ['male', 'female']);
     const embarkedOneHot = oneHotEncode(embarked, ['C', 'Q', 'S']);
     
@@ -258,8 +403,8 @@ function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
     let features = [
         standardizedAge,
         standardizedFare,
-        row.SibSp || 0,
-        row.Parch || 0
+        (row.SibSp || 0),
+        (row.Parch || 0)
     ];
     
     // Add one-hot encoded features
@@ -273,6 +418,95 @@ function extractFeatures(row, ageMedian, fareMedian, embarkedMode) {
     }
     
     return features;
+}
+
+// Preprocess the data
+function preprocessData() {
+    if (!trainData || !testData) {
+        alert('Please load data first.');
+        return;
+    }
+    
+    const outputDiv = document.getElementById('preprocessing-output');
+    outputDiv.innerHTML = '<div class="processing">Preprocessing data...</div>';
+    
+    try {
+        // Calculate imputation values from training data
+        const ageValues = trainData.map(row => row.Age).filter(a => a !== null && a !== undefined && !isNaN(a));
+        const fareValues = trainData.map(row => row.Fare).filter(f => f !== null && f !== undefined && !isNaN(f));
+        const embarkedValues = trainData.map(row => row.Embarked).filter(e => e !== null && e !== undefined && e !== '');
+        
+        const ageMedian = calculateMedian(ageValues);
+        const fareMedian = calculateMedian(fareValues);
+        const embarkedMode = calculateMode(embarkedValues);
+        
+        console.log('Imputation values:', { 
+            ageMedian, 
+            fareMedian, 
+            embarkedMode,
+            ageValuesLength: ageValues.length,
+            fareValuesLength: fareValues.length,
+            embarkedValuesLength: embarkedValues.length
+        });
+        
+        // Preprocess training data
+        preprocessedTrainData = {
+            features: [],
+            labels: []
+        };
+        
+        trainData.forEach(row => {
+            const features = extractFeatures(row, ageMedian, fareMedian, embarkedMode);
+            preprocessedTrainData.features.push(features);
+            // Ensure label is 0 or 1
+            const label = row[TARGET_FEATURE] === 1 ? 1 : 0;
+            preprocessedTrainData.labels.push(label);
+        });
+        
+        // Preprocess test data
+        preprocessedTestData = {
+            features: [],
+            passengerIds: []
+        };
+        
+        testData.forEach(row => {
+            const features = extractFeatures(row, ageMedian, fareMedian, embarkedMode);
+            preprocessedTestData.features.push(features);
+            preprocessedTestData.passengerIds.push(row[ID_FEATURE]);
+        });
+        
+        // Convert to tensors
+        preprocessedTrainData.features = tf.tensor2d(preprocessedTrainData.features);
+        preprocessedTrainData.labels = tf.tensor1d(preprocessedTrainData.labels);
+        
+        const featureCount = preprocessedTestData.features[0] ? preprocessedTestData.features[0].length : 0;
+        
+        outputDiv.innerHTML = `
+            <div class="success-message">
+                <h4>✅ Preprocessing completed successfully!</h4>
+                <p><strong>Training samples:</strong> ${preprocessedTrainData.features.shape[0]}</p>
+                <p><strong>Number of features:</strong> ${featureCount}</p>
+                <p><strong>Training features shape:</strong> [${preprocessedTrainData.features.shape}]</p>
+                <p><strong>Training labels shape:</strong> [${preprocessedTrainData.labels.shape}]</p>
+                <p><strong>Test samples:</strong> ${preprocessedTestData.features.length}</p>
+                <p><strong>Imputation values used:</strong></p>
+                <ul>
+                    <li>Age median: ${ageMedian.toFixed(2)}</li>
+                    <li>Fare median: ${fareMedian.toFixed(2)}</li>
+                    <li>Embarked mode: "${embarkedMode}"</li>
+                </ul>
+                <p><strong>Features included:</strong> Age, Fare, SibSp, Parch, Pclass (one-hot), Sex (one-hot), Embarked (one-hot)
+                ${document.getElementById('add-family-features').checked ? ', FamilySize, IsAlone' : ''}</p>
+            </div>
+        `;
+        
+        // Enable the create model button
+        document.getElementById('create-model-btn').disabled = false;
+        
+    } catch (error) {
+        outputDiv.innerHTML = `<div class="error-message">Error during preprocessing: ${error.message}</div>`;
+        console.error('Preprocessing error:', error, error.stack);
+    }
 }
 
 // Create the model
@@ -344,8 +578,12 @@ function createModel() {
         </tr>
     </table>
     
-    <p><strong>Model Architecture:</strong> Input(${inputShape}) → Dense(16, ReLU) → Dense(1, Sigmoid)</p>
-    <p><strong>Parameters:</strong> (${inputShape} × 16 + 16) + (16 × 1 + 1) = ${totalParams}</p>
+    <div class="note">
+        <p><strong>Model Architecture:</strong> Input(${inputShape}) → Dense(16, ReLU) → Dense(1, Sigmoid)</p>
+        <p><strong>Parameters calculation:</strong> (${inputShape} × 16 + 16) + (16 × 1 + 1) = ${totalParams}</p>
+        <p><strong>Purpose:</strong> Binary classification (survived vs not survived)</p>
+        <p><strong>Sigmoid activation:</strong> Converts output to probability between 0 and 1</p>
+    </div>
     `;
     
     summaryDiv.innerHTML += summaryHTML;
@@ -362,7 +600,7 @@ async function trainModel() {
     }
     
     const statusDiv = document.getElementById('training-status');
-    statusDiv.innerHTML = 'Training model...';
+    statusDiv.innerHTML = '<div class="processing">Training model...</div>';
     
     try {
         // Split training data into train and validation sets (80/20)
@@ -374,35 +612,47 @@ async function trainModel() {
         const valFeatures = preprocessedTrainData.features.slice(splitIndex);
         const valLabels = preprocessedTrainData.labels.slice(splitIndex);
         
+        console.log('Data split:', {
+            total: preprocessedTrainData.features.shape[0],
+            train: splitIndex,
+            validation: preprocessedTrainData.features.shape[0] - splitIndex
+        });
+        
         // Store validation data for later evaluation
         validationData = valFeatures;
         validationLabels = valLabels;
-        
-        // Prepare callbacks for training visualization
-        const fitCallbacks = {
-            onEpochEnd: async (epoch, logs) => {
-                // Update status
-                statusDiv.innerHTML = `Epoch ${epoch + 1}/50 - Loss: ${logs.loss.toFixed(4)}, Acc: ${logs.acc.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}, Val Acc: ${logs.val_acc.toFixed(4)}`;
-                
-                // Update tfjs-vis charts
-                tfvis.show.history({name: 'Training History', tab: 'Training'}, [logs], ['loss', 'acc', 'val_loss', 'val_acc'], {
-                    xLabel: 'Epoch',
-                    yLabel: 'Value',
-                    height: 300
-                });
-            }
-        };
         
         // Train the model
         trainingHistory = await model.fit(trainFeatures, trainLabels, {
             epochs: 50,
             batchSize: 32,
             validationData: [valFeatures, valLabels],
-            callbacks: fitCallbacks,
+            callbacks: {
+                onEpochEnd: (epoch, logs) => {
+                    // Update status
+                    statusDiv.innerHTML = `
+                        <div class="processing">
+                            <p>Epoch ${epoch + 1}/50</p>
+                            <p>Loss: ${logs.loss.toFixed(4)} | Accuracy: ${(logs.acc * 100).toFixed(2)}%</p>
+                            <p>Val Loss: ${logs.val_loss.toFixed(4)} | Val Accuracy: ${(logs.val_acc * 100).toFixed(2)}%</p>
+                        </div>
+                    `;
+                    
+                    // Update training chart if tfvis is available
+                    if (typeof tfvis !== 'undefined') {
+                        try {
+                            const history = [{epoch: epoch, loss: logs.loss, acc: logs.acc, val_loss: logs.val_loss, val_acc: logs.val_acc}];
+                            tfvis.show.history({name: 'Training History', tab: 'Training'}, history, ['loss', 'acc', 'val_loss', 'val_acc']);
+                        } catch (e) {
+                            console.log('tfvis not available for charting');
+                        }
+                    }
+                }
+            },
             verbose: 0
         });
         
-        statusDiv.innerHTML += '<p style="color: green; font-weight: bold;">Training completed successfully!</p>';
+        statusDiv.innerHTML += '<div class="success-message"><p>✅ Training completed successfully!</p></div>';
         
         // Make predictions on validation set for evaluation
         validationPredictions = model.predict(validationData);
@@ -421,8 +671,8 @@ async function trainModel() {
         await updateMetrics();
         
     } catch (error) {
-        statusDiv.innerHTML = `<p style="color: red;">Error during training: ${error.message}</p>`;
-        console.error('Training error:', error);
+        statusDiv.innerHTML = `<div class="error-message">Error during training: ${error.message}</div>`;
+        console.error('Training error:', error, error.stack);
     }
 }
 
@@ -442,8 +692,8 @@ async function updateMetrics() {
         const trueVals = await validationLabels.array();
         
         // Flatten arrays if needed
-        const predictions = predVals.flat();
-        const actuals = trueVals.flat();
+        const predictions = Array.isArray(predVals[0]) ? predVals.flat() : predVals;
+        const actuals = Array.isArray(trueVals[0]) ? trueVals.flat() : trueVals;
         
         // Calculate confusion matrix
         let tp = 0, tn = 0, fp = 0, fn = 0;
@@ -464,18 +714,18 @@ async function updateMetrics() {
             <table class="confusion-table">
                 <tr>
                     <th></th>
-                    <th>Predicted Positive</th>
-                    <th>Predicted Negative</th>
+                    <th>Predicted Survived</th>
+                    <th>Predicted Not Survived</th>
                 </tr>
                 <tr>
-                    <th>Actual Positive</th>
-                    <td class="true-positive">${tp}</td>
-                    <td class="false-negative">${fn}</td>
+                    <th>Actual Survived</th>
+                    <td class="true-positive">${tp} (True Positive)</td>
+                    <td class="false-negative">${fn} (False Negative)</td>
                 </tr>
                 <tr>
-                    <th>Actual Negative</th>
-                    <td class="false-positive">${fp}</td>
-                    <td class="true-negative">${tn}</td>
+                    <th>Actual Not Survived</th>
+                    <td class="false-positive">${fp} (False Positive)</td>
+                    <td class="true-negative">${tn} (True Negative)</td>
                 </tr>
             </table>
         `;
@@ -498,7 +748,7 @@ async function updateMetrics() {
                 <span class="metric-value">${precision.toFixed(4)}</span>
             </div>
             <div class="metric-item">
-                <span class="metric-label">Recall:</span>
+                <span class="metric-label">Recall (Sensitivity):</span>
                 <span class="metric-value">${recall.toFixed(4)}</span>
             </div>
             <div class="metric-item">
@@ -512,6 +762,8 @@ async function updateMetrics() {
         
     } catch (error) {
         console.error('Error in updateMetrics:', error);
+        const metricsDiv = document.getElementById('performance-metrics');
+        metricsDiv.innerHTML = `<div class="error-message">Error calculating metrics: ${error.message}</div>`;
     }
 }
 
@@ -553,31 +805,12 @@ async function plotROC(trueLabels, predictions) {
     const metricsDiv = document.getElementById('performance-metrics');
     metricsDiv.innerHTML += `
         <div class="metric-item">
-            <span class="metric-label">AUC:</span>
+            <span class="metric-label">AUC (Area Under ROC):</span>
             <span class="metric-value">${auc.toFixed(4)}</span>
         </div>
     `;
     
-    // Plot ROC curve using tfvis
-    const rocValues = rocData.map(d => ({ x: d.fpr, y: d.tpr }));
-    
-    // Clear previous chart
-    const rocContainer = document.getElementById('roc-chart');
-    if (rocContainer) {
-        rocContainer.innerHTML = '';
-    }
-    
-    // Plot using tfvis
-    const surface = { name: 'ROC Curve', tab: 'Evaluation' };
-    const data = { values: rocValues };
-    const options = {
-        xLabel: 'False Positive Rate',
-        yLabel: 'True Positive Rate',
-        height: 300,
-        width: 400
-    };
-    
-    // We'll use a simple canvas-based approach for better compatibility
+    // Create ROC curve visualization
     createSimpleROCCurve(rocData, auc);
 }
 
@@ -587,229 +820,121 @@ function createSimpleROCCurve(rocData, auc) {
     if (!container) return;
     
     container.innerHTML = `
-        <div style="position: relative; width: 400px; height: 300px;">
-            <canvas id="roc-canvas" width="400" height="300" style="border: 1px solid #ddd;"></canvas>
-            <div style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 5px;">
+        <h4>ROC Curve (AUC = ${auc.toFixed(4)})</h4>
+        <div style="position: relative; width: 100%; max-width: 500px; margin: 0 auto;">
+            <canvas id="roc-canvas" width="500" height="400" style="border: 1px solid #ddd; background: white;"></canvas>
+            <div style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 3px; font-size: 12px;">
                 AUC = ${auc.toFixed(4)}
             </div>
         </div>
+        <p style="text-align: center; font-size: 0.9em; color: #666;">
+            ROC curve shows trade-off between True Positive Rate and False Positive Rate at different classification thresholds.
+        </p>
     `;
     
-    const canvas = document.getElementById('roc-canvas');
-    const ctx = canvas.getContext('2d');
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, 400, 300);
-    
-    // Draw axes
-    ctx.beginPath();
-    ctx.moveTo(50, 250);
-    ctx.lineTo(350, 250);
-    ctx.moveTo(50, 250);
-    ctx.lineTo(50, 50);
-    ctx.strokeStyle = '#000';
-    ctx.stroke();
-    
-    // Draw labels
-    ctx.fillText('False Positive Rate', 180, 280);
-    ctx.save();
-    ctx.translate(20, 150);
-    ctx.rotate(-Math.PI/2);
-    ctx.fillText('True Positive Rate', 0, 0);
-    ctx.restore();
-    
-    // Draw diagonal reference line
-    ctx.beginPath();
-    ctx.moveTo(50, 250);
-    ctx.lineTo(350, 50);
-    ctx.strokeStyle = '#ccc';
-    ctx.stroke();
-    
-    // Draw ROC curve
-    ctx.beginPath();
-    rocData.forEach((point, i) => {
-        const x = 50 + point.fpr * 300;
-        const y = 250 - point.tpr * 200;
+    setTimeout(() => {
+        const canvas = document.getElementById('roc-canvas');
+        if (!canvas) return;
         
-        if (i === 0) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    });
-    ctx.strokeStyle = '#1a73e8';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
-    // Draw current threshold point
-    const threshold = parseFloat(document.getElementById('threshold-slider').value);
-    const thresholdPoint = rocData.find(d => Math.abs(d.threshold - threshold) < 0.01) || rocData[50];
-    if (thresholdPoint) {
-        const x = 50 + thresholdPoint.fpr * 300;
-        const y = 250 - thresholdPoint.tpr * 200;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const padding = 50;
         
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+        
+        // Draw axes
         ctx.beginPath();
-        ctx.arc(x, y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff0000';
-        ctx.fill();
-    }
-}
-
-// Main functions (same as before, just adding the missing ones)
-
-// Inspect the loaded data
-function inspectData() {
-    if (!trainData || trainData.length === 0) {
-        alert('Please load data first.');
-        return;
-    }
-    
-    // Show data preview
-    const previewDiv = document.getElementById('data-preview');
-    previewDiv.innerHTML = '<h3>Data Preview (First 10 Rows)</h3>';
-    previewDiv.appendChild(createPreviewTable(trainData.slice(0, 10)));
-    
-    // Calculate and show data statistics
-    const statsDiv = document.getElementById('data-stats');
-    statsDiv.innerHTML = '<h3>Data Statistics</h3>';
-    
-    const shapeInfo = `Dataset shape: ${trainData.length} rows × ${Object.keys(trainData[0]).length} columns`;
-    const survivalCount = trainData.filter(row => row[TARGET_FEATURE] === 1).length;
-    const survivalRate = (survivalCount / trainData.length * 100).toFixed(2);
-    const targetInfo = `Survival rate: ${survivalCount}/${trainData.length} (${survivalRate}%)`;
-    
-    // Calculate missing values percentage for each feature
-    let missingInfo = '<h4>Missing Values Percentage:</h4><ul>';
-    Object.keys(trainData[0]).forEach(feature => {
-        const missingCount = trainData.filter(row => row[feature] === null || row[feature] === undefined).length;
-        const missingPercent = (missingCount / trainData.length * 100).toFixed(2);
-        missingInfo += `<li>${feature}: ${missingPercent}%</li>`;
-    });
-    missingInfo += '</ul>';
-    
-    statsDiv.innerHTML += `<p>${shapeInfo}</p><p>${targetInfo}</p>${missingInfo}`;
-    
-    // Create visualizations
-    createVisualizations();
-    
-    // Enable the preprocess button
-    document.getElementById('preprocess-btn').disabled = false;
-}
-
-// Create visualizations
-function createVisualizations() {
-    const chartsDiv = document.getElementById('charts');
-    chartsDiv.innerHTML = '<h3>Data Visualizations</h3>';
-    
-    // Create simple charts using div elements instead of tfvis
-    createSimpleCharts();
-}
-
-function createSimpleCharts() {
-    const chartsDiv = document.getElementById('charts');
-    
-    // Survival by Sex
-    const survivalBySex = {};
-    trainData.forEach(row => {
-        if (row.Sex && row.Survived !== undefined) {
-            if (!survivalBySex[row.Sex]) {
-                survivalBySex[row.Sex] = { survived: 0, total: 0 };
-            }
-            survivalBySex[row.Sex].total++;
-            if (row.Survived === 1) {
-                survivalBySex[row.Sex].survived++;
-            }
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(width - padding, height - padding);
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(padding, padding);
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Draw axis labels
+        ctx.font = '12px Arial';
+        ctx.fillStyle = '#333';
+        ctx.fillText('False Positive Rate', width / 2 - 40, height - 10);
+        ctx.save();
+        ctx.translate(15, height / 2);
+        ctx.rotate(-Math.PI/2);
+        ctx.fillText('True Positive Rate', 0, 0);
+        ctx.restore();
+        
+        // Draw grid
+        ctx.strokeStyle = '#eee';
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i <= 1; i += 0.2) {
+            // Horizontal grid lines
+            const y = padding + (1 - i) * (height - 2 * padding);
+            ctx.beginPath();
+            ctx.moveTo(padding, y);
+            ctx.lineTo(width - padding, y);
+            ctx.stroke();
+            
+            // Vertical grid lines
+            const x = padding + i * (width - 2 * padding);
+            ctx.beginPath();
+            ctx.moveTo(x, padding);
+            ctx.lineTo(x, height - padding);
+            ctx.stroke();
+            
+            // Axis ticks
+            ctx.fillStyle = '#666';
+            ctx.fillText(i.toFixed(1), x - 5, height - padding + 15);
+            ctx.fillText(i.toFixed(1), padding - 25, y + 4);
         }
-    });
-    
-    let sexChartHTML = '<h4>Survival Rate by Sex</h4><div class="chart-container">';
-    Object.entries(survivalBySex).forEach(([sex, stats]) => {
-        const rate = (stats.survived / stats.total) * 100;
-        sexChartHTML += `
-            <div class="chart-bar">
-                <div class="bar-label">${sex}</div>
-                <div class="bar-bg">
-                    <div class="bar-fill" style="width: ${rate}%"></div>
-                </div>
-                <div class="bar-value">${rate.toFixed(1)}%</div>
-            </div>
-        `;
-    });
-    sexChartHTML += '</div>';
-    
-    chartsDiv.innerHTML += sexChartHTML;
-}
-
-// Preprocess the data
-function preprocessData() {
-    if (!trainData || !testData) {
-        alert('Please load data first.');
-        return;
-    }
-    
-    const outputDiv = document.getElementById('preprocessing-output');
-    outputDiv.innerHTML = 'Preprocessing data...';
-    
-    try {
-        // Calculate imputation values from training data
-        const ageMedian = calculateMedian(trainData.map(row => row.Age));
-        const fareMedian = calculateMedian(trainData.map(row => row.Fare));
-        const embarkedMode = calculateMode(trainData.map(row => row.Embarked));
         
-        console.log('Imputation values:', { ageMedian, fareMedian, embarkedMode });
+        // Draw diagonal reference line
+        ctx.beginPath();
+        ctx.moveTo(padding, height - padding);
+        ctx.lineTo(width - padding, padding);
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
         
-        // Preprocess training data
-        preprocessedTrainData = {
-            features: [],
-            labels: []
-        };
-        
-        trainData.forEach(row => {
-            const features = extractFeatures(row, ageMedian, fareMedian, embarkedMode);
-            preprocessedTrainData.features.push(features);
-            preprocessedTrainData.labels.push(row[TARGET_FEATURE]);
+        // Draw ROC curve
+        ctx.beginPath();
+        rocData.forEach((point, i) => {
+            const x = padding + point.fpr * (width - 2 * padding);
+            const y = padding + (1 - point.tpr) * (height - 2 * padding);
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         });
+        ctx.strokeStyle = '#1a73e8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
         
-        // Preprocess test data
-        preprocessedTestData = {
-            features: [],
-            passengerIds: []
-        };
+        // Draw current threshold point
+        const threshold = parseFloat(document.getElementById('threshold-slider').value);
+        const thresholdPoint = rocData.find(d => Math.abs(d.threshold - threshold) < 0.01) || rocData[Math.round(threshold * 100)];
+        if (thresholdPoint) {
+            const x = padding + thresholdPoint.fpr * (width - 2 * padding);
+            const y = padding + (1 - thresholdPoint.tpr) * (height - 2 * padding);
+            
+            ctx.beginPath();
+            ctx.arc(x, y, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Label
+            ctx.fillStyle = '#ff0000';
+            ctx.fillText(`Threshold: ${threshold.toFixed(2)}`, x + 10, y - 10);
+        }
         
-        testData.forEach(row => {
-            const features = extractFeatures(row, ageMedian, fareMedian, embarkedMode);
-            preprocessedTestData.features.push(features);
-            preprocessedTestData.passengerIds.push(row[ID_FEATURE]);
-        });
-        
-        // Convert to tensors
-        preprocessedTrainData.features = tf.tensor2d(preprocessedTrainData.features);
-        preprocessedTrainData.labels = tf.tensor1d(preprocessedTrainData.labels);
-        
-        const featureCount = preprocessedTestData.features[0] ? preprocessedTestData.features[0].length : 0;
-        
-        outputDiv.innerHTML = `
-            <div class="success-message">
-                <p>✅ Preprocessing completed successfully!</p>
-                <p><strong>Training features shape:</strong> [${preprocessedTrainData.features.shape}]</p>
-                <p><strong>Training labels shape:</strong> [${preprocessedTrainData.labels.shape}]</p>
-                <p><strong>Test samples:</strong> ${preprocessedTestData.features.length}</p>
-                <p><strong>Number of features:</strong> ${featureCount}</p>
-                <p><strong>Imputation values used:</strong></p>
-                <ul>
-                    <li>Age median: ${ageMedian.toFixed(2)}</li>
-                    <li>Fare median: ${fareMedian.toFixed(2)}</li>
-                    <li>Embarked mode: ${embarkedMode}</li>
-                </ul>
-            </div>
-        `;
-        
-        // Enable the create model button
-        document.getElementById('create-model-btn').disabled = false;
-    } catch (error) {
-        outputDiv.innerHTML = `<div class="error-message">Error during preprocessing: ${error.message}</div>`;
-        console.error('Preprocessing error:', error);
-    }
+    }, 100);
 }
 
 // Predict on test data
@@ -820,7 +945,7 @@ async function predict() {
     }
     
     const outputDiv = document.getElementById('prediction-output');
-    outputDiv.innerHTML = 'Making predictions...';
+    outputDiv.innerHTML = '<div class="processing">Making predictions...</div>';
     
     try {
         // Convert test features to tensor
@@ -831,20 +956,36 @@ async function predict() {
         const predValues = await testPredictions.array();
         
         // Create prediction results
-        const results = preprocessedTestData.passengerIds.map((id, i) => ({
-            PassengerId: id,
-            Survived: predValues[i] >= 0.5 ? 1 : 0,
-            Probability: predValues[i][0] || predValues[i]
-        }));
+        const results = preprocessedTestData.passengerIds.map((id, i) => {
+            const probability = Array.isArray(predValues[i]) ? predValues[i][0] : predValues[i];
+            return {
+                PassengerId: id,
+                Survived: probability >= 0.5 ? 1 : 0,
+                Probability: probability
+            };
+        });
         
         // Show first 10 predictions
         outputDiv.innerHTML = '<h3>Prediction Results (First 10 Rows)</h3>';
         outputDiv.appendChild(createPredictionTable(results.slice(0, 10)));
         
-        outputDiv.innerHTML += `<p>Predictions completed! Total: ${results.length} samples</p>`;
+        // Calculate summary statistics
+        const survivedCount = results.filter(r => r.Survived === 1).length;
+        const avgProbability = results.reduce((sum, r) => sum + r.Probability, 0) / results.length;
+        
+        outputDiv.innerHTML += `
+            <div class="success-message" style="margin-top: 20px;">
+                <p>✅ Predictions completed!</p>
+                <p><strong>Total predictions:</strong> ${results.length} samples</p>
+                <p><strong>Predicted to survive:</strong> ${survivedCount} (${(survivedCount/results.length*100).toFixed(1)}%)</p>
+                <p><strong>Average probability:</strong> ${avgProbability.toFixed(4)}</p>
+                <p><strong>Threshold:</strong> 0.5 (can be adjusted in Evaluation section)</p>
+            </div>
+        `;
         
         // Enable the export button
         document.getElementById('export-btn').disabled = false;
+        
     } catch (error) {
         outputDiv.innerHTML = `<div class="error-message">Error during prediction: ${error.message}</div>`;
         console.error('Prediction error:', error);
@@ -876,17 +1017,24 @@ function createPredictionTable(data) {
         
         // Survived
         const survivedCell = document.createElement('td');
-        survivedCell.textContent = row.Survived;
+        survivedCell.textContent = row.Survived === 1 ? 'Yes ✅' : 'No ❌';
         survivedCell.style.fontWeight = 'bold';
-        survivedCell.style.color = row.Survived === 1 ? 'green' : 'red';
+        survivedCell.style.color = row.Survived === 1 ? 'green' : '#d32f2f';
         tr.appendChild(survivedCell);
         
         // Probability
         const probCell = document.createElement('td');
         probCell.textContent = row.Probability.toFixed(4);
         // Color based on probability
-        if (row.Probability >= 0.7) probCell.style.color = 'green';
-        else if (row.Probability <= 0.3) probCell.style.color = 'red';
+        if (row.Probability >= 0.7) {
+            probCell.style.color = 'green';
+            probCell.style.fontWeight = 'bold';
+        } else if (row.Probability <= 0.3) {
+            probCell.style.color = '#d32f2f';
+            probCell.style.fontWeight = 'bold';
+        } else {
+            probCell.style.color = '#666';
+        }
         tr.appendChild(probCell);
         
         table.appendChild(tr);
@@ -903,7 +1051,7 @@ async function exportResults() {
     }
     
     const statusDiv = document.getElementById('export-status');
-    statusDiv.innerHTML = 'Exporting results...';
+    statusDiv.innerHTML = '<div class="processing">Exporting results...</div>';
     
     try {
         // Get predictions
@@ -912,43 +1060,50 @@ async function exportResults() {
         // Create submission CSV (PassengerId, Survived)
         let submissionCSV = 'PassengerId,Survived\n';
         preprocessedTestData.passengerIds.forEach((id, i) => {
-            const survived = predValues[i] >= 0.5 ? 1 : 0;
+            const probability = Array.isArray(predValues[i]) ? predValues[i][0] : predValues[i];
+            const survived = probability >= 0.5 ? 1 : 0;
             submissionCSV += `${id},${survived}\n`;
         });
         
         // Create probabilities CSV (PassengerId, Probability)
         let probabilitiesCSV = 'PassengerId,Probability\n';
         preprocessedTestData.passengerIds.forEach((id, i) => {
-            probabilitiesCSV += `${id},${predValues[i].toFixed(6)}\n`;
+            const probability = Array.isArray(predValues[i]) ? predValues[i][0] : predValues[i];
+            probabilitiesCSV += `${id},${probability.toFixed(6)}\n`;
         });
         
         // Create download links
         const submissionLink = document.createElement('a');
-        submissionLink.href = URL.createObjectURL(new Blob([submissionCSV], { type: 'text/csv' }));
+        submissionLink.href = URL.createObjectURL(new Blob([submissionCSV], { type: 'text/csv;charset=utf-8;' }));
         submissionLink.download = 'titanic_submission.csv';
-        submissionLink.textContent = 'Download submission.csv';
+        submissionLink.innerHTML = '<button style="margin: 5px;">📥 Download submission.csv</button>';
         
         const probabilitiesLink = document.createElement('a');
-        probabilitiesLink.href = URL.createObjectURL(new Blob([probabilitiesCSV], { type: 'text/csv' }));
+        probabilitiesLink.href = URL.createObjectURL(new Blob([probabilitiesCSV], { type: 'text/csv;charset=utf-8;' }));
         probabilitiesLink.download = 'titanic_probabilities.csv';
-        probabilitiesLink.textContent = 'Download probabilities.csv';
+        probabilitiesLink.innerHTML = '<button style="margin: 5px;">📊 Download probabilities.csv</button>';
         
         statusDiv.innerHTML = `
             <div class="success-message">
-                <p>✅ Export completed!</p>
-                <p>Click to download:</p>
-                <div style="display: flex; gap: 10px; margin: 10px 0;">
+                <h4>✅ Export completed!</h4>
+                <p>Files ready for download:</p>
+                <div style="margin: 15px 0;">
                     ${submissionLink.outerHTML}
-                    ${probabilitiesLink.download = 'titanic_probabilities.csv'; probabilitiesLink.outerHTML}
+                    ${probabilitiesLink.outerHTML}
                 </div>
+                <p><strong>submission.csv</strong> - Kaggle submission format (PassengerId, Survived)</p>
+                <p><strong>probabilities.csv</strong> - Raw prediction probabilities for analysis</p>
+                <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
+                    Note: Files will download automatically. If not, click the buttons above.
+                </p>
             </div>
         `;
         
-        // Trigger clicks programmatically
+        // Trigger downloads automatically
         setTimeout(() => {
             submissionLink.click();
-            probabilitiesLink.click();
-        }, 100);
+            setTimeout(() => probabilitiesLink.click(), 100);
+        }, 500);
         
     } catch (error) {
         statusDiv.innerHTML = `<div class="error-message">Error during export: ${error.message}</div>`;
@@ -960,52 +1115,67 @@ async function exportResults() {
 function visualizeSigmoid() {
     const sigmoidDiv = document.getElementById('sigmoid-vis');
     sigmoidDiv.innerHTML = `
-        <h3>Sigmoid Activation Function</h3>
-        <p>The sigmoid function converts any real number to a value between 0 and 1:</p>
-        <p><strong>σ(z) = 1 / (1 + e^(-z))</strong></p>
-        <div style="position: relative; width: 400px; height: 300px;">
-            <canvas id="sigmoid-canvas" width="400" height="300" style="border: 1px solid #ddd;"></canvas>
+        <div class="success-message">
+            <h3>Sigmoid Activation Function</h3>
+            <p>The sigmoid function converts any real number to a value between 0 and 1:</p>
+            <p style="text-align: center; font-size: 1.2em;"><strong>σ(z) = 1 / (1 + e^(-z))</strong></p>
+            <div style="position: relative; width: 100%; max-width: 500px; margin: 20px auto;">
+                <canvas id="sigmoid-canvas" width="500" height="300" style="border: 1px solid #ddd; background: white;"></canvas>
+            </div>
+            <div style="margin-top: 20px;">
+                <h4>Properties:</h4>
+                <ul>
+                    <li><strong>Output range:</strong> (0, 1) - perfect for probability</li>
+                    <li><strong>S-shaped curve</strong> (sigmoid means "S-shaped")</li>
+                    <li><strong>Derivative:</strong> σ'(z) = σ(z) × (1 - σ(z)) - easy to compute for backpropagation</li>
+                    <li><strong>Used as</strong> the final activation in binary classification</li>
+                    <li><strong>Interpretation:</strong> Output > 0.5 → Class 1, Output < 0.5 → Class 0</li>
+                </ul>
+                <p>In our Titanic model, the sigmoid takes the weighted sum of the hidden layer outputs and produces a survival probability.</p>
+            </div>
         </div>
-        <p>Properties:</p>
-        <ul>
-            <li>Output range: (0, 1) - perfect for probability</li>
-            <li>S-shaped curve (sigmoid means "S-shaped")</li>
-            <li>Used as the final activation in binary classification</li>
-            <li>Derivative: σ'(z) = σ(z) × (1 - σ(z)) - easy to compute</li>
-        </ul>
     `;
     
     // Draw sigmoid function
     setTimeout(() => {
         const canvas = document.getElementById('sigmoid-canvas');
+        if (!canvas) return;
+        
         const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
         
         // Clear canvas
-        ctx.clearRect(0, 0, 400, 300);
+        ctx.clearRect(0, 0, width, height);
         
         // Draw axes
         ctx.beginPath();
-        ctx.moveTo(50, 150);
-        ctx.lineTo(350, 150);
-        ctx.moveTo(200, 50);
-        ctx.lineTo(200, 250);
-        ctx.strokeStyle = '#000';
+        ctx.moveTo(50, centerY);
+        ctx.lineTo(width - 50, centerY);
+        ctx.moveTo(centerX, 20);
+        ctx.lineTo(centerX, height - 20);
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
         ctx.stroke();
         
         // Draw labels
-        ctx.fillText('z (input)', 180, 280);
+        ctx.font = '14px Arial';
+        ctx.fillStyle = '#333';
+        ctx.fillText('z (weighted input)', width - 60, centerY + 20);
         ctx.save();
-        ctx.translate(10, 150);
+        ctx.translate(centerX - 30, 15);
         ctx.rotate(-Math.PI/2);
-        ctx.fillText('σ(z) (output)', 0, 0);
+        ctx.fillText('σ(z) (output probability)', 0, 0);
         ctx.restore();
         
         // Draw sigmoid curve
         ctx.beginPath();
         for (let x = -6; x <= 6; x += 0.1) {
             const y = 1 / (1 + Math.exp(-x));
-            const canvasX = 200 + x * 25;
-            const canvasY = 150 - y * 100;
+            const canvasX = centerX + x * 40;
+            const canvasY = centerY - y * 100;
             
             if (x === -6) {
                 ctx.moveTo(canvasX, canvasY);
@@ -1014,22 +1184,41 @@ function visualizeSigmoid() {
             }
         }
         ctx.strokeStyle = '#1a73e8';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.stroke();
         
-        // Mark key points
-        [-2, 0, 2].forEach(x => {
-            const y = 1 / (1 + Math.exp(-x));
-            const canvasX = 200 + x * 25;
-            const canvasY = 150 - y * 100;
-            
-            ctx.beginPath();
-            ctx.arc(canvasX, canvasY, 3, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff0000';
-            ctx.fill();
-            
-            ctx.fillText(`σ(${x}) = ${y.toFixed(3)}`, canvasX + 5, canvasY - 10);
-        });
+        // Mark key points and decision boundary
+        ctx.fillStyle = '#1a73e8';
+        ctx.font = '12px Arial';
+        
+        // Decision boundary at z=0, σ(0)=0.5
+        const zeroX = centerX;
+        const zeroY = centerY - 0.5 * 100;
+        ctx.beginPath();
+        ctx.arc(zeroX, zeroY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillText('σ(0)=0.5 (Decision Boundary)', zeroX + 10, zeroY - 10);
+        
+        // Draw horizontal line at y=0.5
+        ctx.beginPath();
+        ctx.moveTo(50, zeroY);
+        ctx.lineTo(width - 50, zeroY);
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Draw regions
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+        ctx.fillRect(50, zeroY, zeroX - 50, 100);
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+        ctx.fillRect(zeroX, zeroY, width - 50 - zeroX, 100);
+        
+        ctx.fillStyle = '#333';
+        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', 100, zeroY + 60);
+        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', zeroX + 30, zeroY + 60);
+        
     }, 100);
 }
 
@@ -1041,7 +1230,7 @@ async function analyzeFeatureImportance() {
     }
     
     const statusDiv = document.getElementById('importance-status');
-    statusDiv.innerHTML = 'Analyzing feature importance...';
+    statusDiv.innerHTML = '<div class="processing">Analyzing feature importance...</div>';
     
     try {
         // Get feature names
@@ -1091,14 +1280,15 @@ async function analyzeFeatureImportance() {
             
             // Importance Score
             const importanceCell = document.createElement('td');
-            importanceCell.textContent = item.importance.toFixed(4);
-            importanceCell.style.color = item.importance > 0 ? 'green' : 'red';
+            importanceCell.textContent = Math.abs(item.importance).toFixed(4);
+            importanceCell.style.fontWeight = 'bold';
+            importanceCell.style.color = item.importance > 0 ? 'green' : '#d32f2f';
             row.appendChild(importanceCell);
             
             // Direction
             const directionCell = document.createElement('td');
             directionCell.textContent = item.importance > 0 ? 'Positive' : 'Negative';
-            directionCell.style.color = item.importance > 0 ? 'green' : 'red';
+            directionCell.style.color = item.importance > 0 ? 'green' : '#d32f2f';
             row.appendChild(directionCell);
             
             table.appendChild(row);
@@ -1106,15 +1296,21 @@ async function analyzeFeatureImportance() {
         
         statusDiv.appendChild(table);
         
+        // Create feature importance chart
+        createFeatureImportanceChart(importanceData.slice(0, 10));
+        
         // Explanation
         statusDiv.innerHTML += `
-            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+            <div class="note" style="margin-top: 20px;">
                 <h4>How Feature Importance is Calculated:</h4>
-                <p>1. For each feature, we randomly shuffle its values in the validation set</p>
-                <p>2. We measure how much the model's accuracy decreases</p>
-                <p>3. Greater decrease = more important feature</p>
-                <p><strong>Positive importance</strong>: Feature helps predict survival</p>
-                <p><strong>Negative importance</strong>: Feature helps predict non-survival</p>
+                <ol>
+                    <li>For each feature, we randomly shuffle its values in the validation set</li>
+                    <li>We measure how much the model's accuracy decreases after shuffling</li>
+                    <li>Greater decrease = more important feature for prediction</li>
+                </ol>
+                <p><strong>Positive importance:</strong> Feature helps predict survival (e.g., being female)</p>
+                <p><strong>Negative importance:</strong> Feature helps predict non-survival (e.g., being in 3rd class)</p>
+                <p><em>Note: This is a simplified permutation importance. For exact values, use scikit-learn in Python.</em></p>
             </div>
         `;
         
@@ -1128,13 +1324,17 @@ async function analyzeFeatureImportance() {
 function getFeatureNames() {
     const featureNames = [];
     
-    // Numerical features
-    featureNames.push('Age (std)', 'Fare (std)', 'SibSp', 'Parch');
+    // Numerical features (standardized)
+    featureNames.push('Age (standardized)', 'Fare (standardized)', 'SibSp', 'Parch');
     
-    // One-hot encoded features
-    featureNames.push('Pclass_1', 'Pclass_2', 'Pclass_3');
-    featureNames.push('Sex_male', 'Sex_female');
-    featureNames.push('Embarked_C', 'Embarked_Q', 'Embarked_S');
+    // One-hot encoded Pclass
+    featureNames.push('Pclass 1', 'Pclass 2', 'Pclass 3');
+    
+    // One-hot encoded Sex
+    featureNames.push('Male', 'Female');
+    
+    // One-hot encoded Embarked
+    featureNames.push('Embarked C', 'Embarked Q', 'Embarked S');
     
     // Optional family features
     if (document.getElementById('add-family-features').checked) {
@@ -1151,23 +1351,25 @@ async function computePermutationImportance(featureNames) {
     const baselineProbs = await baselinePred.array();
     const baselineLabels = await validationLabels.array();
     
-    let baselineAcc = 0;
+    let baselineCorrect = 0;
     for (let i = 0; i < baselineProbs.length; i++) {
-        const pred = baselineProbs[i] >= 0.5 ? 1 : 0;
-        if (pred === baselineLabels[i]) baselineAcc++;
+        const pred = (Array.isArray(baselineProbs[i]) ? baselineProbs[i][0] : baselineProbs[i]) >= 0.5 ? 1 : 0;
+        const actual = Array.isArray(baselineLabels[i]) ? baselineLabels[i][0] : baselineLabels[i];
+        if (pred === actual) baselineCorrect++;
     }
-    baselineAcc /= baselineProbs.length;
+    const baselineAcc = baselineCorrect / baselineProbs.length;
     
     // Compute importance for each feature
     const importanceScores = new Array(featureNames.length).fill(0);
+    const validationDataArray = await validationData.array();
     
     // For each feature, shuffle and measure accuracy drop
     for (let featIdx = 0; featIdx < featureNames.length; featIdx++) {
         // Create shuffled validation data
-        const shuffledData = validationData.arraySync();
+        const shuffledData = JSON.parse(JSON.stringify(validationDataArray)); // Deep copy
         const shuffledCol = shuffledData.map(row => row[featIdx]);
         
-        // Shuffle the column
+        // Shuffle the column (Fisher-Yates shuffle)
         for (let i = shuffledCol.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [shuffledCol[i], shuffledCol[j]] = [shuffledCol[j], shuffledCol[i]];
@@ -1184,12 +1386,13 @@ async function computePermutationImportance(featureNames) {
         const shuffledProbs = await shuffledPred.array();
         
         // Calculate accuracy
-        let shuffledAcc = 0;
+        let shuffledCorrect = 0;
         for (let i = 0; i < shuffledProbs.length; i++) {
-            const pred = shuffledProbs[i] >= 0.5 ? 1 : 0;
-            if (pred === baselineLabels[i]) shuffledAcc++;
+            const pred = (Array.isArray(shuffledProbs[i]) ? shuffledProbs[i][0] : shuffledProbs[i]) >= 0.5 ? 1 : 0;
+            const actual = Array.isArray(baselineLabels[i]) ? baselineLabels[i][0] : baselineLabels[i];
+            if (pred === actual) shuffledCorrect++;
         }
-        shuffledAcc /= shuffledProbs.length;
+        const shuffledAcc = shuffledCorrect / shuffledProbs.length;
         
         // Importance = decrease in accuracy (can be negative if shuffling improves accuracy)
         importanceScores[featIdx] = baselineAcc - shuffledAcc;
@@ -1204,3 +1407,103 @@ async function computePermutationImportance(featureNames) {
     
     return importanceScores;
 }
+
+// Create feature importance chart
+function createFeatureImportanceChart(importanceData) {
+    const container = document.getElementById('importance-status');
+    
+    const chartHTML = `
+        <div style="margin: 20px 0;">
+            <h4>Top Features Visualization</h4>
+            <div style="position: relative; width: 100%; max-width: 600px; margin: 0 auto;">
+                <canvas id="importance-canvas" width="600" height="400" style="border: 1px solid #ddd; background: white;"></canvas>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML += chartHTML;
+    
+    setTimeout(() => {
+        const canvas = document.getElementById('importance-canvas');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const padding = { top: 40, right: 100, bottom: 60, left: 150 };
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+        
+        // Calculate bar dimensions
+        const barHeight = 25;
+        const maxImportance = Math.max(...importanceData.map(d => Math.abs(d.importance)));
+        const scale = (width - padding.left - padding.right) / (maxImportance * 2);
+        
+        // Draw bars
+        importanceData.forEach((item, index) => {
+            const y = padding.top + index * (barHeight + 10);
+            const barWidth = Math.abs(item.importance) * scale;
+            const x = padding.left + (item.importance > 0 ? maxImportance * scale : (maxImportance - Math.abs(item.importance)) * scale);
+            
+            // Draw bar
+            ctx.fillStyle = item.importance > 0 ? 'rgba(76, 175, 80, 0.8)' : 'rgba(244, 67, 54, 0.8)';
+            if (item.importance > 0) {
+                ctx.fillRect(x, y, barWidth, barHeight);
+            } else {
+                ctx.fillRect(x - barWidth, y, barWidth, barHeight);
+            }
+            
+            // Draw feature name
+            ctx.fillStyle = '#333';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText(item.feature, padding.left - 10, y + barHeight / 2 + 4);
+            
+            // Draw value
+            ctx.fillStyle = item.importance > 0 ? '#2e7d32' : '#c62828';
+            ctx.font = 'bold 11px Arial';
+            ctx.textAlign = item.importance > 0 ? 'left' : 'right';
+            const valueX = item.importance > 0 ? x + barWidth + 5 : x - barWidth - 5;
+            ctx.fillText(item.importance.toFixed(4), valueX, y + barHeight / 2 + 4);
+        });
+        
+        // Draw center line
+        ctx.beginPath();
+        const centerX = padding.left + maxImportance * scale;
+        ctx.moveTo(centerX, padding.top - 10);
+        ctx.lineTo(centerX, padding.top + importanceData.length * (barHeight + 10));
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Draw title and labels
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Feature Importance (Permutation)', width / 2, 20);
+        
+        ctx.font = '12px Arial';
+        ctx.fillText('Negative Impact (Predicts Not Survived)', centerX - 100, padding.top + importanceData.length * (barHeight + 10) + 30);
+        ctx.fillText('Positive Impact (Predicts Survived)', centerX + 100, padding.top + importanceData.length * (barHeight + 10) + 30);
+        
+        // Draw legend
+        ctx.fillStyle = 'rgba(244, 67, 54, 0.8)';
+        ctx.fillRect(width - 120, 30, 15, 15);
+        ctx.fillStyle = 'rgba(76, 175, 80, 0.8)';
+        ctx.fillRect(width - 120, 50, 15, 15);
+        
+        ctx.fillStyle = '#333';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('Negative (Not Survived)', width - 100, 42);
+        ctx.fillText('Positive (Survived)', width - 100, 62);
+        
+    }, 100);
+}
+
+// Initialize the application
+window.addEventListener('DOMContentLoaded', function() {
+    // Add any initialization code here
+    console.log('Titanic Survival Classifier initialized');
+});
