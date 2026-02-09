@@ -8,6 +8,29 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
     <script src="app.js"></script>
     <style>
+        .importance-table {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        .importance-table table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .importance-table th, .importance-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .importance-table th {
+            background-color: #f2f2f2;
+        }
+        #sigmoid-vis {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }   
         body {
             font-family: Arial, sans-serif;
             line-height: 1.6;
@@ -163,6 +186,18 @@
             </div>
         </section>
 
+        <section id="sigmoid">
+            <h2>Sigmoid Activation Visualization</h2>
+            <button onclick="visualizeSigmoid()">Visualize Sigmoid Function</button>
+            <div id="sigmoid-vis"></div>
+        </section>
+
+        <section id="importance">
+            <h2>Feature Importance Analysis</h2>
+            <button id="importance-btn" onclick="analyzeFeatureImportance()" disabled>Analyze Feature Importance</button>
+            <div id="importance-status"></div>
+        </section>
+        
         <section id="prediction">
             <h2>7. Prediction</h2>
             <button id="predict-btn" onclick="predict()" disabled>Predict on Test Data</button>
