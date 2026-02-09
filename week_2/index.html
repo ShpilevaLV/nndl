@@ -8,220 +8,524 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
     <script src="app.js"></script>
     <style>
-        .importance-table {
-            margin-top: 20px;
-            overflow-x: auto;
-        }
-        .importance-table table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-top: 10px;
-        }
-        .importance-table th, .importance-table td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        .importance-table th {
-            background-color: #f2f2f2;
-        }
-        #sigmoid-vis {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 5px;
-        }   
         body {
             font-family: Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 20px;
             color: #333;
+            background-color: #f5f7fa;
         }
         .container {
             max-width: 1200px;
             margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        h1, h2 {
+        h1 {
             color: #1a73e8;
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #1a73e8;
+        }
+        h2 {
+            color: #1a73e8;
+            margin-top: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        h3 {
+            color: #333;
+            margin-top: 15px;
         }
         section {
             margin-bottom: 30px;
             padding: 20px;
             border: 1px solid #ddd;
-            border-radius: 5px;
+            border-radius: 8px;
+            background-color: #fff;
+        }
+        section:hover {
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: box-shadow 0.3s ease;
         }
         button {
             background-color: #1a73e8;
             color: white;
-            padding: 10px 15px;
+            padding: 12px 20px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
-            margin: 5px;
+            margin: 10px 5px 10px 0;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
         }
         button:hover {
             background-color: #0d62c9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        button:active {
+            transform: translateY(0);
         }
         button:disabled {
             background-color: #ccc;
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
         input[type="file"] {
             margin: 10px 0;
+            padding: 10px;
+            border: 2px dashed #1a73e8;
+            border-radius: 5px;
+            width: 100%;
+            max-width: 400px;
         }
         .metrics-container {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
+            margin-top: 20px;
         }
         .metric-card {
             border: 1px solid #ddd;
-            padding: 15px;
-            border-radius: 5px;
-            min-width: 200px;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 250px;
+            flex: 1;
+            background-color: #f8f9fa;
+        }
+        .metric-card h3 {
+            margin-top: 0;
+            color: #1a73e8;
         }
         .slider-container {
-            margin: 15px 0;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
         }
         .slider {
             width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #ddd;
+            outline: none;
+            margin: 10px 0;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #1a73e8;
+            cursor: pointer;
         }
         .data-preview {
             overflow-x: auto;
+            margin: 15px 0;
         }
         table {
             border-collapse: collapse;
             width: 100%;
+            margin: 10px 0;
         }
         th, td {
             border: 1px solid #ddd;
-            padding: 8px;
+            padding: 10px;
             text-align: left;
         }
         th {
-            background-color: #f2f2f2;
+            background-color: #1a73e8;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f0f7ff;
         }
         .note {
-            background-color: #f8f9fa;
+            background-color: #e8f4fd;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #1a73e8;
+        }
+        .success-message {
+            background-color: #d4edda;
+            color: #155724;
             padding: 15px;
             border-radius: 5px;
-            margin: 15px 0;
+            border: 1px solid #c3e6cb;
+            margin: 10px 0;
+        }
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #f5c6cb;
+            margin: 10px 0;
+        }
+        .chart-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        .chart-bar {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .bar-label {
+            width: 100px;
+            font-weight: bold;
+        }
+        .bar-bg {
+            flex-grow: 1;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            margin: 0 10px;
+            overflow: hidden;
+        }
+        .bar-fill {
+            height: 100%;
+            background-color: #1a73e8;
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+        .bar-value {
+            width: 80px;
+            text-align: right;
+            font-weight: bold;
+        }
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 12px;
+            background-color: white;
+            border-radius: 6px;
+            border: 1px solid #eee;
+        }
+        .metric-label {
+            font-weight: bold;
+            color: #555;
+        }
+        .metric-value {
+            font-family: monospace;
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+        .confusion-table {
+            width: auto;
+            margin: 15px auto;
+        }
+        .confusion-table th, .confusion-table td {
+            text-align: center;
+            padding: 15px;
+        }
+        .true-positive {
+            background-color: rgba(0, 255, 0, 0.1);
+            font-weight: bold;
+        }
+        .true-negative {
+            background-color: rgba(0, 255, 0, 0.1);
+            font-weight: bold;
+        }
+        .false-positive {
+            background-color: rgba(255, 0, 0, 0.1);
+        }
+        .false-negative {
+            background-color: rgba(255, 0, 0, 0.1);
+        }
+        .model-table {
+            width: 100%;
+        }
+        .model-table th {
+            background-color: #1a73e8;
+        }
+        .model-table .total-row {
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }
+        .importance-table {
+            width: 100%;
+        }
+        .importance-table th {
+            background-color: #1a73e8;
+        }
+        .prediction-table td:nth-child(2) {
+            font-weight: bold;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ready {
+            background-color: #28a745;
+        }
+        .status-not-ready {
+            background-color: #dc3545;
+        }
+        .status-processing {
+            background-color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background-color: #1a73e8;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            margin-right: 10px;
+            font-weight: bold;
         }
         @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            section {
+                padding: 15px;
+            }
             .metrics-container {
                 flex-direction: column;
+            }
+            .metric-card {
+                min-width: 100%;
+            }
+            button {
+                width: 100%;
+                margin: 5px 0;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Titanic Survival Classifier with TensorFlow.js</h1>
+        <h1>🚢 Titanic Survival Classifier with TensorFlow.js</h1>
+        <p style="text-align: center; color: #666; margin-bottom: 30px;">
+            A complete machine learning workflow running entirely in your browser.
+            Upload Titanic CSV files to predict passenger survival.
+        </p>
         
         <section id="data-load">
-            <h2>1. Data Load</h2>
+            <h2><span class="step-number">1</span> Data Load</h2>
             <p>Upload the training and test CSV files from the Titanic dataset:</p>
             <div>
-                <label for="train-file">Training Data (train.csv):</label>
+                <label for="train-file"><strong>Training Data (train.csv):</strong></label><br>
                 <input type="file" id="train-file" accept=".csv">
             </div>
-            <div>
-                <label for="test-file">Test Data (test.csv):</label>
+            <div style="margin-top: 15px;">
+                <label for="test-file"><strong>Test Data (test.csv):</strong></label><br>
                 <input type="file" id="test-file" accept=".csv">
             </div>
-            <button id="load-data-btn" onclick="loadData()">Load Data</button>
+            <button id="load-data-btn" onclick="loadData()">📁 Load Data</button>
             <div id="data-status"></div>
+            <div class="note">
+                <strong>Note:</strong> Download the Titanic dataset from 
+                <a href="https://www.kaggle.com/c/titanic/data" target="_blank">Kaggle</a>.
+                You need both <code>train.csv</code> and <code>test.csv</code> files.
+            </div>
         </section>
 
         <section id="inspect">
-            <h2>2. Data Inspection</h2>
-            <button id="inspect-btn" onclick="inspectData()" disabled>Inspect Data</button>
+            <h2><span class="step-number">2</span> Data Inspection</h2>
+            <button id="inspect-btn" onclick="inspectData()" disabled>
+                <span class="status-indicator status-not-ready"></span>Inspect Data
+            </button>
             <div id="data-preview" class="data-preview"></div>
             <div id="data-stats"></div>
             <div id="charts"></div>
         </section>
 
         <section id="preprocessing">
-            <h2>3. Preprocessing</h2>
-            <button id="preprocess-btn" onclick="preprocessData()" disabled>Preprocess Data</button>
-            <div>
+            <h2><span class="step-number">3</span> Preprocessing</h2>
+            <button id="preprocess-btn" onclick="preprocessData()" disabled>
+                <span class="status-indicator status-not-ready"></span>Preprocess Data
+            </button>
+            <div style="margin: 15px 0;">
                 <label>
-                    <input type="checkbox" id="add-family-features" checked>
-                    Add Family Features (FamilySize, IsAlone)
+                    <input type="checkbox" id="add-family-features" checked style="margin-right: 8px;">
+                    <strong>Add Family Features:</strong> FamilySize = SibSp + Parch + 1, IsAlone = (FamilySize == 1)
                 </label>
             </div>
             <div id="preprocessing-output"></div>
+            <div class="note">
+                <strong>Preprocessing steps:</strong>
+                <ul>
+                    <li>Impute missing Age with median</li>
+                    <li>Impute missing Embarked with mode</li>
+                    <li>Standardize Age and Fare</li>
+                    <li>One-hot encode Sex, Pclass, Embarked</li>
+                </ul>
+            </div>
         </section>
 
         <section id="model">
-            <h2>4. Model Setup</h2>
-            <button id="create-model-btn" onclick="createModel()" disabled>Create Model</button>
+            <h2><span class="step-number">4</span> Model Setup</h2>
+            <button id="create-model-btn" onclick="createModel()" disabled>
+                <span class="status-indicator status-not-ready"></span>Create Model
+            </button>
             <div id="model-summary"></div>
+            <div class="note">
+                <strong>Model Architecture:</strong> Simple neural network with one hidden layer (16 neurons, ReLU activation) 
+                and output layer (1 neuron, Sigmoid activation for binary classification).
+            </div>
         </section>
 
         <section id="training">
-            <h2>5. Training</h2>
-            <button id="train-btn" onclick="trainModel()" disabled>Train Model</button>
+            <h2><span class="step-number">5</span> Training</h2>
+            <button id="train-btn" onclick="trainModel()" disabled>
+                <span class="status-indicator status-not-ready"></span>Train Model
+            </button>
             <div id="training-status"></div>
             <div id="training-vis"></div>
-        </section>
-
-        <section id="metrics">
-            <h2>6. Evaluation Metrics</h2>
-            <div class="slider-container">
-                <label for="threshold-slider">Classification Threshold (for ROC curve):</label>
-                <input type="range" id="threshold-slider" class="slider" min="0" max="1" step="0.01" value="0.5" disabled>
-                <span id="threshold-value">0.5</span>
-            </div>
-            <div id="metrics-output" class="metrics-container">
-                <div class="metric-card">
-                    <h3>Confusion Matrix</h3>
-                    <div id="confusion-matrix"></div>
-                </div>
-                <div class="metric-card">
-                    <h3>Performance Metrics</h3>
-                    <div id="performance-metrics"></div>
-                </div>
+            <div class="note">
+                <strong>Training settings:</strong> 50 epochs, batch size 32, Adam optimizer, 
+                80/20 train/validation split, binary cross-entropy loss.
             </div>
         </section>
 
         <section id="sigmoid">
-            <h2>Sigmoid Activation Visualization</h2>
-            <button onclick="visualizeSigmoid()">Visualize Sigmoid Function</button>
+            <h2><span class="step-number">6</span> Sigmoid Activation</h2>
+            <button onclick="visualizeSigmoid()">📊 Visualize Sigmoid Function</button>
             <div id="sigmoid-vis"></div>
+            <div class="note">
+                <strong>About Sigmoid:</strong> Converts any real number to a value between 0 and 1. 
+                Used as the output activation for binary classification to produce probabilities.
+                Formula: σ(z) = 1 / (1 + e^(-z))
+            </div>
+        </section>
+
+        <section id="metrics">
+            <h2><span class="step-number">7</span> Evaluation Metrics</h2>
+            <div class="slider-container">
+                <label for="threshold-slider"><strong>Classification Threshold:</strong></label>
+                <input type="range" id="threshold-slider" class="slider" min="0" max="1" step="0.01" value="0.5" disabled>
+                <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+                    <span>0 (Predict all as Not Survived)</span>
+                    <span id="threshold-value" style="font-weight: bold; color: #1a73e8;">0.5</span>
+                    <span>1 (Predict all as Survived)</span>
+                </div>
+            </div>
+            
+            <div id="roc-chart" class="chart-container">
+                <h3>ROC Curve</h3>
+                <p>Move the slider above to see how threshold affects predictions.</p>
+            </div>
+            
+            <div class="metrics-container">
+                <div class="metric-card">
+                    <h3>📊 Confusion Matrix</h3>
+                    <div id="confusion-matrix">
+                        <p>Train model to see confusion matrix</p>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <h3>📈 Performance Metrics</h3>
+                    <div id="performance-metrics">
+                        <p>Train model to see performance metrics</p>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <section id="importance">
-            <h2>Feature Importance Analysis</h2>
-            <button id="importance-btn" onclick="analyzeFeatureImportance()" disabled>Analyze Feature Importance</button>
+            <h2><span class="step-number">8</span> Feature Importance</h2>
+            <button id="importance-btn" onclick="analyzeFeatureImportance()" disabled>
+                <span class="status-indicator status-not-ready"></span>Analyze Feature Importance
+            </button>
             <div id="importance-status"></div>
+            <div class="note">
+                <strong>How it works:</strong> Feature importance is calculated using permutation importance. 
+                Each feature is shuffled, and we measure how much the model's accuracy decreases. 
+                Greater decrease = more important feature.
+            </div>
         </section>
-        
+
         <section id="prediction">
-            <h2>7. Prediction</h2>
-            <button id="predict-btn" onclick="predict()" disabled>Predict on Test Data</button>
+            <h2><span class="step-number">9</span> Prediction</h2>
+            <button id="predict-btn" onclick="predict()" disabled>
+                <span class="status-indicator status-not-ready"></span>Predict on Test Data
+            </button>
             <div id="prediction-output"></div>
+            <div class="note">
+                <strong>Output format:</strong> For each passenger in test.csv, the model predicts:
+                <ul>
+                    <li>Survived: 0 (No) or 1 (Yes) based on threshold (default: 0.5)</li>
+                    <li>Probability: Confidence score between 0 and 1</li>
+                </ul>
+            </div>
         </section>
 
         <section id="export">
-            <h2>8. Export Results</h2>
-            <button id="export-btn" onclick="exportResults()" disabled>Export Results</button>
+            <h2><span class="step-number">10</span> Export Results</h2>
+            <button id="export-btn" onclick="exportResults()" disabled>
+                <span class="status-indicator status-not-ready"></span>Export Results
+            </button>
             <div id="export-status"></div>
+            <div class="note">
+                <strong>Exported files:</strong>
+                <ul>
+                    <li><code>submission.csv</code>: Kaggle submission format (PassengerId, Survived)</li>
+                    <li><code>probabilities.csv</code>: Raw prediction probabilities</li>
+                    <li>Model files for reuse</li>
+                </ul>
+            </div>
         </section>
 
         <section id="deployment">
-            <h2>Deployment Notes</h2>
+            <h2>🚀 Deployment Notes</h2>
             <div class="note">
-                <p>To deploy this application:</p>
+                <h3>How to deploy this application:</h3>
                 <ol>
                     <li>Create a public GitHub repository</li>
-                    <li>Commit index.html and app.js to the repository</li>
-                    <li>Enable GitHub Pages in repository settings (select main branch and root folder)</li>
-                    <li>Your app will be available at: https://[your-username].github.io/[repository-name]</li>
+                    <li>Commit <code>index.html</code> and <code>app.js</code> to the repository</li>
+                    <li>Go to repository Settings → Pages</li>
+                    <li>Select "Deploy from branch" and choose "main" branch and "/ (root)" folder</li>
+                    <li>Click "Save" - your app will be available at:<br>
+                        <code>https://[your-username].github.io/[repository-name]</code></li>
+                    <li>Wait a few minutes for GitHub Pages to build and deploy</li>
                 </ol>
+                <h3>To use with other datasets:</h3>
+                <p>Modify the schema configuration in <code>app.js</code>:</p>
+                <ul>
+                    <li><code>TARGET_FEATURE</code>: Your binary classification target column</li>
+                    <li><code>ID_FEATURE</code>: Identifier column to exclude</li>
+                    <li><code>NUMERICAL_FEATURES</code>: List of numerical feature columns</li>
+                    <li><code>CATEGORICAL_FEATURES</code>: List of categorical feature columns</li>
+                </ul>
             </div>
         </section>
+
+        <footer style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;">
+            <p>Titanic Survival Classifier - TensorFlow.js Demo</p>
+            <p>This application runs entirely in your browser. No data is sent to any server.</p>
+            <p>Built with TensorFlow.js and tfjs-vis | Dataset: Kaggle Titanic</p>
+        </footer>
     </div>
 </body>
 </html>
