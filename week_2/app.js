@@ -463,54 +463,63 @@ async function trainModel() {
 
 // Update metrics based on threshold
 async function updateMetrics() {
-    if (!validationPredictions || !validationLabels) return;
+    if (!validationPredictions || !validationLabels) {
+        console.log('Validation data not available yet');
+        return;
+    }
     
     const threshold = parseFloat(document.getElementById('threshold-slider').value);
     document.getElementById('threshold-value').textContent = threshold.toFixed(2);
     
-    // Calculate confusion matrix
-    const predVals = validationPredictions.arraySync();
-    const trueVals = validationLabels.arraySync();
-    
-    let tp = 0, tn = 0, fp = 0, fn = 0;
-    
-    for (let i = 0; i < predVals.length; i++) {
-        const prediction = predVals[i] >= threshold ? 1 : 0;
-        const actual = trueVals[i];
+    try {
+        // Get predictions as array - use async to avoid blocking
+        const predVals = await validationPredictions.array();
+        const trueVals = await validationLabels.array();
         
-        if (prediction === 1 && actual === 1) tp++;
-        else if (prediction === 0 && actual === 0) tn++;
-        else if (prediction === 1 && actual === 0) fp++;
-        else if (prediction === 0 && actual === 1) fn++;
+        // Calculate confusion matrix
+        let tp = 0, tn = 0, fp = 0, fn = 0;
+        
+        for (let i = 0; i < predVals.length; i++) {
+            const prediction = predVals[i] >= threshold ? 1 : 0;
+            const actual = trueVals[i];
+            
+            if (prediction === 1 && actual === 1) tp++;
+            else if (prediction === 0 && actual === 0) tn++;
+            else if (prediction === 1 && actual === 0) fp++;
+            else if (prediction === 0 && actual === 1) fn++;
+        }
+        
+        // Update confusion matrix display
+        const cmDiv = document.getElementById('confusion-matrix');
+        cmDiv.innerHTML = `
+            <table>
+                <tr><th></th><th>Predicted Positive</th><th>Predicted Negative</th></tr>
+                <tr><th>Actual Positive</th><td>${tp}</td><td>${fn}</td></tr>
+                <tr><th>Actual Negative</th><td>${fp}</td><td>${tn}</td></tr>
+            </table>
+        `;
+        
+        // Calculate performance metrics
+        const precision = tp / (tp + fp) || 0;
+        const recall = tp / (tp + fn) || 0;
+        const f1 = 2 * (precision * recall) / (precision + recall) || 0;
+        const accuracy = (tp + tn) / (tp + tn + fp + fn) || 0;
+        
+        // Update performance metrics display
+        const metricsDiv = document.getElementById('performance-metrics');
+        metricsDiv.innerHTML = `
+            <p>Accuracy: ${(accuracy * 100).toFixed(2)}%</p>
+            <p>Precision: ${precision.toFixed(4)}</p>
+            <p>Recall: ${recall.toFixed(4)}</p>
+            <p>F1 Score: ${f1.toFixed(4)}</p>
+        `;
+        
+        // Calculate and plot ROC curve
+        await plotROC(trueVals, predVals);
+        
+    } catch (error) {
+        console.error('Error in updateMetrics:', error);
     }
-    
-    // Update confusion matrix display
-    const cmDiv = document.getElementById('confusion-matrix');
-    cmDiv.innerHTML = `
-        <table>
-            <tr><th></th><th>Predicted Positive</th><th>Predicted Negative</th></tr>
-            <tr><th>Actual Positive</th><td>${tp}</td><td>${fn}</td></tr>
-            <tr><th>Actual Negative</th><td>${fp}</td><td>${tn}</td></tr>
-        </table>
-    `;
-    
-    // Calculate performance metrics
-    const precision = tp / (tp + fp) || 0;
-    const recall = tp / (tp + fn) || 0;
-    const f1 = 2 * (precision * recall) / (precision + recall) || 0;
-    const accuracy = (tp + tn) / (tp + tn + fp + fn) || 0;
-    
-    // Update performance metrics display
-    const metricsDiv = document.getElementById('performance-metrics');
-    metricsDiv.innerHTML = `
-        <p>Accuracy: ${(accuracy * 100).toFixed(2)}%</p>
-        <p>Precision: ${precision.toFixed(4)}</p>
-        <p>Recall: ${recall.toFixed(4)}</p>
-        <p>F1 Score: ${f1.toFixed(4)}</p>
-    `;
-    
-    // Calculate and plot ROC curve
-    await plotROC(trueVals, predVals);
 }
 
 // Plot ROC curve
@@ -683,4 +692,197 @@ async function exportResults() {
         statusDiv.innerHTML = `Error during export: ${error.message}`;
         console.error(error);
     }
+}
+
+// Analyze feature importance using gradient of sigmoid output
+async function analyzeFeatureImportance() {
+    if (!model || !validationData) {
+        alert('Please train model first.');
+        return;
+    }
+    
+    const statusDiv = document.getElementById('importance-status');
+    statusDiv.innerHTML = 'Analyzing feature importance...';
+    
+    try {
+        // Get feature names
+        const featureNames = getFeatureNames();
+        
+        // Compute gradient of output with respect to input features
+        const importanceScores = await computeFeatureImportance();
+        
+        // Prepare data for visualization
+        const importanceData = featureNames.map((name, index) => ({
+            feature: name,
+            importance: Math.abs(importanceScores[index]) // Use absolute value
+        }));
+        
+        // Sort by importance (descending)
+        importanceData.sort((a, b) => b.importance - a.importance);
+        
+        // Display top 10 features
+        statusDiv.innerHTML = '<h3>Top 10 Most Important Features</h3>';
+        const table = document.createElement('table');
+        
+        // Header
+        const headerRow = document.createElement('tr');
+        ['Rank', 'Feature', 'Importance Score'].forEach(header => {
+            const th = document.createElement('th');
+            th.textContent = header;
+            headerRow.appendChild(th);
+        });
+        table.appendChild(headerRow);
+        
+        // Data rows (top 10)
+        importanceData.slice(0, 10).forEach((item, index) => {
+            const row = document.createElement('tr');
+            
+            const rankCell = document.createElement('td');
+            rankCell.textContent = index + 1;
+            row.appendChild(rankCell);
+            
+            const featureCell = document.createElement('td');
+            featureCell.textContent = item.feature;
+            row.appendChild(featureCell);
+            
+            const importanceCell = document.createElement('td');
+            importanceCell.textContent = item.importance.toFixed(6);
+            row.appendChild(importanceCell);
+            
+            table.appendChild(row);
+        });
+        
+        statusDiv.appendChild(table);
+        
+        // Create bar chart visualization
+        const chartData = importanceData.slice(0, 10).map(item => ({
+            x: item.feature,
+            y: item.importance
+        }));
+        
+        tfvis.render.barchart(
+            { name: 'Feature Importance', tab: 'Importance' },
+            chartData,
+            {
+                xLabel: 'Feature',
+                yLabel: 'Importance Score',
+                width: 500,
+                height: 400
+            }
+        );
+        
+        statusDiv.innerHTML += '<p>Feature importance analysis completed! Chart available in tfjs-vis visor.</p>';
+        
+    } catch (error) {
+        statusDiv.innerHTML = `Error analyzing feature importance: ${error.message}`;
+        console.error(error);
+    }
+}
+
+// Get feature names based on preprocessing
+function getFeatureNames() {
+    const featureNames = [];
+    
+    // Numerical features (standardized)
+    featureNames.push('Age (std)', 'Fare (std)', 'SibSp', 'Parch');
+    
+    // One-hot encoded Pclass
+    featureNames.push('Pclass_1', 'Pclass_2', 'Pclass_3');
+    
+    // One-hot encoded Sex
+    featureNames.push('Sex_male', 'Sex_female');
+    
+    // One-hot encoded Embarked
+    featureNames.push('Embarked_C', 'Embarked_Q', 'Embarked_S');
+    
+    // Optional family features
+    if (document.getElementById('add-family-features').checked) {
+        featureNames.push('FamilySize', 'IsAlone');
+    }
+    
+    return featureNames;
+}
+
+// Compute feature importance using gradient
+async function computeFeatureImportance() {
+    // Create a function that returns model output
+    const f = (x) => model.predict(x);
+    
+    // Get gradient function with respect to input
+    const grad = tf.grad(f);
+    
+    // Compute gradient for each validation sample and average
+    const batchSize = 100;
+    const numSamples = validationData.shape[0];
+    let totalGradients = null;
+    
+    for (let i = 0; i < numSamples; i += batchSize) {
+        const batchEnd = Math.min(i + batchSize, numSamples);
+        const batch = validationData.slice(i, batchEnd - i);
+        
+        // Compute gradient for this batch
+        const batchGradients = grad(batch);
+        
+        // Sum gradients
+        if (totalGradients === null) {
+            totalGradients = batchGradients.sum(0); // Sum across batch dimension
+        } else {
+            totalGradients = totalGradients.add(batchGradients.sum(0));
+        }
+        
+        // Clean up
+        batchGradients.dispose();
+        batch.dispose();
+    }
+    
+    // Average gradients across all samples
+    const avgGradients = totalGradients.div(numSamples);
+    const importanceScores = await avgGradients.array();
+    
+    // Clean up
+    totalGradients.dispose();
+    avgGradients.dispose();
+    
+    return importanceScores;
+}
+
+// Add Sigmoid activation visualization to understand its effect
+function visualizeSigmoid() {
+    // Generate values from -10 to 10
+    const values = Array.from({length: 201}, (_, i) => (i - 100) / 10);
+    
+    // Compute sigmoid values
+    const sigmoidData = values.map(x => ({
+        x: x,
+        y: 1 / (1 + Math.exp(-x))
+    }));
+    
+    // Plot sigmoid function
+    tfvis.render.linechart(
+        { name: 'Sigmoid Activation Function', tab: 'Sigmoid' },
+        { values: sigmoidData },
+        {
+            xLabel: 'Input (z)',
+            yLabel: 'Sigmoid(z)',
+            width: 500,
+            height: 400,
+            series: ['Sigmoid']
+        }
+    );
+    
+    // Add explanation
+    const sigmoidDiv = document.getElementById('sigmoid-vis');
+    sigmoidDiv.innerHTML = `
+        <h3>Sigmoid Function Explained</h3>
+        <p>The sigmoid function converts any real number into a value between 0 and 1:</p>
+        <p><strong>σ(z) = 1 / (1 + e^(-z))</strong></p>
+        <p>Properties:</p>
+        <ul>
+            <li>Output range: (0, 1) - perfect for probability</li>
+            <li>S-shaped curve</li>
+            <li>Derivative: σ'(z) = σ(z) * (1 - σ(z))</li>
+            <li>Used in binary classification as the output layer</li>
+        </ul>
+        <p>In our model, the sigmoid takes the weighted sum of hidden layer outputs and produces survival probability.</p>
+    `;
 }
