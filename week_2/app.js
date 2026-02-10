@@ -27,7 +27,7 @@ async function loadData() {
     }
     
     const statusDiv = document.getElementById('data-status');
-    statusDiv.innerHTML = '<div class="processing">Loading data...</div>';
+    statusDiv.innerHTML = 'Loading data...';
     
     try {
         // Load training data
@@ -38,61 +38,16 @@ async function loadData() {
         const testText = await readFile(testFile);
         testData = parseCSV(testText);
         
-        statusDiv.innerHTML = `<div class="success-message">Data loaded successfully!<br>Training: ${trainData.length} samples, Test: ${testData.length} samples</div>`;
+        statusDiv.innerHTML = `Data loaded successfully! Training: ${trainData.length} samples, Test: ${testData.length} samples`;
         
         // Enable the inspect button
         document.getElementById('inspect-btn').disabled = false;
         updateStatusIndicator('inspect-btn', 'ready');
-        
-        // Initialize tfjs-vis
-        initializeTFVis();
     } catch (error) {
-        statusDiv.innerHTML = `<div class="error-message">Error loading data: ${error.message}</div>`;
+        statusDiv.innerHTML = `Error loading data: ${error.message}`;
         console.error(error);
         updateStatusIndicator('inspect-btn', 'not-ready');
     }
-}
-
-// Initialize tfjs-vis
-function initializeTFVis() {
-    if (typeof tfvis === 'undefined') {
-        console.warn('tfjs-vis not available. Charts will use fallback.');
-        return;
-    }
-    
-    // Create a button to open the visor
-    const chartsDiv = document.getElementById('charts');
-    if (chartsDiv && !document.getElementById('open-charts-btn')) {
-        const openButton = document.createElement('button');
-        openButton.id = 'open-charts-btn';
-        openButton.innerHTML = '<i class="fas fa-chart-bar"></i> Open Charts Panel';
-        openButton.onclick = openChartsPanel;
-        openButton.style.marginTop = '10px';
-        chartsDiv.appendChild(openButton);
-    }
-}
-
-// Open charts panel
-function openChartsPanel() {
-    if (typeof tfvis === 'undefined') {
-        alert('tfjs-vis is not available. Please check your internet connection.');
-        return;
-    }
-    
-    const visor = tfvis.visor();
-    if (!visor.isOpen()) {
-        visor.open();
-    }
-    
-    // Switch to Charts tab
-    setTimeout(() => {
-        const tabs = document.querySelectorAll('.tfjs-visor__tab');
-        tabs.forEach(tab => {
-            if (tab.textContent && tab.textContent.includes('Charts')) {
-                tab.click();
-            }
-        });
-    }, 100);
 }
 
 // Read file as text
@@ -284,9 +239,17 @@ function createVisualizations() {
     chartsDiv.innerHTML = '<h3>Data Visualizations</h3>';
     
     try {
-        // Survival by Sex
+        // Ensure tfvis is available
+        if (typeof tfvis === 'undefined') {
+            throw new Error('tfjs-vis not loaded');
+        }
+        
+        // Calculate data for charts
         const survivalBySex = {};
+        const survivalByPclass = {};
+        
         trainData.forEach(row => {
+            // Survival by Sex
             if (row.Sex && row.Survived !== undefined && row.Sex !== null) {
                 if (!survivalBySex[row.Sex]) {
                     survivalBySex[row.Sex] = { survived: 0, total: 0 };
@@ -296,16 +259,8 @@ function createVisualizations() {
                     survivalBySex[row.Sex].survived++;
                 }
             }
-        });
-        
-        const sexData = Object.entries(survivalBySex).map(([sex, stats]) => ({
-            sex,
-            survivalRate: (stats.survived / stats.total) * 100
-        }));
-        
-        // Survival by Pclass
-        const survivalByPclass = {};
-        trainData.forEach(row => {
+            
+            // Survival by Pclass
             if (row.Pclass !== undefined && row.Pclass !== null && row.Survived !== undefined) {
                 const pclass = `Class ${row.Pclass}`;
                 if (!survivalByPclass[pclass]) {
@@ -318,110 +273,127 @@ function createVisualizations() {
             }
         });
         
+        const sexData = Object.entries(survivalBySex).map(([sex, stats]) => ({
+            sex,
+            survivalRate: (stats.survived / stats.total) * 100
+        }));
+        
         const pclassData = Object.entries(survivalByPclass).map(([pclass, stats]) => ({
             pclass,
             survivalRate: (stats.survived / stats.total) * 100
         }));
         
-        // Try to use tfjs-vis if available
-        if (typeof tfvis !== 'undefined') {
-            // Open visor if not open
-            const visor = tfvis.visor();
-            if (!visor.isOpen()) {
-                visor.open();
-            }
-            
-            // Create surfaces with proper styling
-            const sexSurface = { 
+        // Create surface for Sex chart
+        tfvis.render.barchart(
+            { 
                 name: 'Survival Rate by Sex', 
                 tab: 'Charts',
-                styles: {
-                    width: '100%',
-                    height: '400px',
-                    margin: '0 auto'
+                styles: { 
+                    height: '350px',
+                    width: '100%'
                 }
-            };
-            
-            const pclassSurface = { 
+            },
+            sexData.map(d => ({ x: d.sex, y: d.survivalRate })),
+            {
+                xLabel: 'Sex',
+                yLabel: 'Survival Rate (%)',
+                width: 400,
+                height: 300,
+                fontSize: 12,
+                tickFontSize: 11,
+                labelFontSize: 12,
+                marginTop: 40,
+                marginBottom: 50,
+                marginLeft: 60,
+                marginRight: 20
+            }
+        );
+        
+        // Create surface for Pclass chart
+        tfvis.render.barchart(
+            { 
                 name: 'Survival Rate by Passenger Class', 
                 tab: 'Charts',
-                styles: {
-                    width: '100%',
-                    height: '400px',
-                    margin: '0 auto'
+                styles: { 
+                    height: '350px',
+                    width: '100%'
                 }
-            };
-            
-            // Render charts with explicit settings
-            setTimeout(() => {
-                try {
-                    // Chart 1: Survival by Sex
-                    tfvis.render.barchart(
-                        sexSurface,
-                        sexData.map(d => ({ x: d.sex, y: d.survivalRate })),
-                        {
-                            xLabel: 'Sex',
-                            yLabel: 'Survival Rate (%)',
-                            width: 500,
-                            height: 400,
-                            fontSize: 12,
-                            xAxisDomain: Object.keys(survivalBySex),
-                            yAxisDomain: [0, 100],
-                            tickFontSize: 11,
-                            labelFontSize: 13,
-                            marginTop: 50,
-                            marginBottom: 70,
-                            marginLeft: 80,
-                            marginRight: 40,
-                            labelPadding: 10,
-                            tickPadding: 8
-                        }
-                    );
-                    
-                    // Chart 2: Survival by Pclass
-                    tfvis.render.barchart(
-                        pclassSurface,
-                        pclassData.map(d => ({ x: d.pclass, y: d.survivalRate })),
-                        {
-                            xLabel: 'Passenger Class',
-                            yLabel: 'Survival Rate (%)',
-                            width: 500,
-                            height: 400,
-                            fontSize: 12,
-                            xAxisDomain: Object.keys(survivalByPclass),
-                            yAxisDomain: [0, 100],
-                            tickFontSize: 11,
-                            labelFontSize: 13,
-                            marginTop: 50,
-                            marginBottom: 70,
-                            marginLeft: 80,
-                            marginRight: 40,
-                            labelPadding: 10,
-                            tickPadding: 8
-                        }
-                    );
-                    
-                    chartsDiv.innerHTML += `
-                        <div class="success-message" style="margin-top: 20px;">
-                            <p>✅ Charts created successfully!</p>
-                            <p>Check the tfjs-vis panel in the bottom-right corner. Click the "Charts" tab to view.</p>
-                        </div>
-                    `;
-                } catch (chartError) {
-                    console.error('Error rendering charts:', chartError);
-                    createEnhancedFallbackChart('Survival Rate by Sex', sexData, chartsDiv);
-                    createEnhancedFallbackChart('Survival Rate by Passenger Class', pclassData, chartsDiv);
+            },
+            pclassData.map(d => ({ x: d.pclass, y: d.survivalRate })),
+            {
+                xLabel: 'Passenger Class',
+                yLabel: 'Survival Rate (%)',
+                width: 400,
+                height: 300,
+                fontSize: 12,
+                tickFontSize: 11,
+                labelFontSize: 12,
+                marginTop: 40,
+                marginBottom: 50,
+                marginLeft: 60,
+                marginRight: 20
+            }
+        );
+        
+        // Age distribution by survival
+        const survivedAges = trainData
+            .filter(row => row.Age !== null && row.Survived === 1)
+            .map(row => row.Age);
+        const notSurvivedAges = trainData
+            .filter(row => row.Age !== null && row.Survived === 0)
+            .map(row => row.Age);
+        
+        tfvis.render.histogram(
+            { 
+                name: 'Age Distribution by Survival', 
+                tab: 'Charts',
+                styles: { 
+                    height: '350px',
+                    width: '100%'
                 }
-            }, 500);
-        } else {
-            throw new Error('tfjs-vis not available');
-        }
+            },
+            { values: survivedAges, label: 'Survived' },
+            {
+                values: notSurvivedAges,
+                label: 'Not Survived'
+            },
+            {
+                width: 400,
+                height: 300,
+                xLabel: 'Age',
+                yLabel: 'Count',
+                fontSize: 12,
+                tickFontSize: 11,
+                labelFontSize: 12,
+                marginTop: 40,
+                marginBottom: 50,
+                marginLeft: 60,
+                marginRight: 20,
+                legendFontSize: 11
+            }
+        );
+        
+        // Add a help button to open the charts panel
+        const helpButton = document.createElement('div');
+        helpButton.className = 'chart-help';
+        helpButton.innerHTML = '<i class="fas fa-chart-bar"></i> Click here to open charts panel';
+        helpButton.onclick = openChartsPanel;
+        
+        chartsDiv.appendChild(helpButton);
+        
+        chartsDiv.innerHTML += `
+            <div class="success-message" style="margin-top: 20px;">
+                <p>✅ Charts created successfully!</p>
+                <p>Click the button above to open the charts panel, or click the tfjs-vis button in the bottom-right corner.</p>
+                <p>If charts don't appear, try refreshing the page.</p>
+            </div>
+        `;
         
     } catch (error) {
         console.error('Error creating visualizations:', error);
         
-        // Fallback to HTML visualization
-        chartsDiv.innerHTML += '<div class="error-message">Using enhanced HTML visualizations instead of tfjs-vis.</div>';
+        // Fallback to simple HTML visualization
+        chartsDiv.innerHTML += '<div class="error-message">Could not load tfjs-vis charts. Using fallback visualizations.</div>';
         
         // Calculate data for fallback charts
         const survivalBySex = {};
@@ -446,7 +418,6 @@ function createVisualizations() {
         
         createEnhancedFallbackChart('Survival Rate by Sex', sexData, chartsDiv);
         
-        // Survival by Pclass
         const survivalByPclass = {};
         trainData.forEach(row => {
             if (row.Pclass !== undefined && row.Pclass !== null && row.Survived !== undefined) {
@@ -469,6 +440,27 @@ function createVisualizations() {
         }));
         
         createEnhancedFallbackChart('Survival Rate by Passenger Class', pclassData, chartsDiv);
+    }
+}
+
+// Open charts panel function
+function openChartsPanel() {
+    if (typeof tfvis !== 'undefined') {
+        const visor = tfvis.visor();
+        if (!visor.isOpen()) {
+            visor.open();
+        }
+        // Switch to Charts tab
+        setTimeout(() => {
+            const tabs = document.querySelectorAll('.tfjs-visor__tab');
+            tabs.forEach(tab => {
+                if (tab.textContent.includes('Charts')) {
+                    tab.click();
+                }
+            });
+        }, 100);
+    } else {
+        alert('tfjs-vis is not loaded. Please refresh the page.');
     }
 }
 
@@ -794,15 +786,15 @@ async function trainModel() {
             callbacks.push(tfvis.show.fitCallbacks(
                 { 
                     name: 'Training Performance',
-                    styles: { width: '95%', height: '400px' }
+                    tab: 'Training',
+                    styles: { height: '350px', width: '100%' }
                 },
                 ['loss', 'acc', 'val_loss', 'val_acc'],
                 {
-                    callbacks: ['onEpochEnd', 'onBatchEnd'],
-                    height: 400,
-                    width: 600,
-                    fontSize: 12,
-                    tickFontSize: 11
+                    height: 300,
+                    width: 400,
+                    fontSize: 11,
+                    tickFontSize: 10
                 }
             ));
         }
@@ -1004,13 +996,10 @@ function createROCCurve(rocData, auc, currentThreshold) {
     
     container.innerHTML = `
         <h4>ROC Curve (AUC = ${auc.toFixed(4)})</h4>
-        <div style="position: relative; width: 100%; max-width: 500px; margin: 0 auto;">
-            <canvas id="roc-canvas" width="500" height="400" style="border: 1px solid #ddd; background: white;"></canvas>
-            <div style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 3px; font-size: 12px;">
-                AUC = ${auc.toFixed(4)}
-            </div>
+        <div style="position: relative; width: 100%; max-width: 450px; margin: 0 auto;">
+            <canvas id="roc-canvas" width="450" height="350" style="border: 1px solid #ddd; background: white;"></canvas>
         </div>
-        <p style="text-align: center; font-size: 0.9em; color: #666;">
+        <p style="text-align: center; font-size: 0.85em; color: #666; margin-top: 10px;">
             ROC curve shows trade-off between True Positive Rate and False Positive Rate at different thresholds.
         </p>
     `;
@@ -1023,46 +1012,73 @@ function createROCCurve(rocData, auc, currentThreshold) {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-        const padding = 60;
+        const padding = { top: 20, right: 20, bottom: 50, left: 60 };
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
         
-        // Draw axes
-        ctx.beginPath();
-        ctx.moveTo(padding, height - padding);
-        ctx.lineTo(width - padding, height - padding);
-        ctx.moveTo(padding, height - padding);
-        ctx.lineTo(padding, padding);
-        ctx.strokeStyle = '#333';
+        // Draw grid
+        ctx.strokeStyle = '#f0f0f0';
         ctx.lineWidth = 1;
+        
+        // Vertical grid lines
+        for (let i = 0; i <= 10; i++) {
+            const x = padding.left + (i / 10) * (width - padding.left - padding.right);
+            ctx.beginPath();
+            ctx.moveTo(x, padding.top);
+            ctx.lineTo(x, height - padding.bottom);
+            ctx.stroke();
+        }
+        
+        // Horizontal grid lines
+        for (let i = 0; i <= 10; i++) {
+            const y = padding.top + (i / 10) * (height - padding.top - padding.bottom);
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(width - padding.right, y);
+            ctx.stroke();
+        }
+        
+        // Draw axes
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, height - padding.bottom);
+        ctx.lineTo(width - padding.right, height - padding.bottom);
+        ctx.moveTo(padding.left, height - padding.bottom);
+        ctx.lineTo(padding.left, padding.top);
         ctx.stroke();
         
         // Draw axis labels
-        ctx.font = '14px Arial';
+        ctx.font = '12px Arial';
         ctx.fillStyle = '#333';
-        ctx.fillText('False Positive Rate', width / 2 - 40, height - 10);
+        ctx.textAlign = 'center';
+        ctx.fillText('False Positive Rate', width / 2, height - 10);
         ctx.save();
-        ctx.translate(20, height / 2);
+        ctx.translate(15, height / 2);
         ctx.rotate(-Math.PI/2);
         ctx.fillText('True Positive Rate', 0, 0);
         ctx.restore();
         
         // Draw diagonal reference line
         ctx.beginPath();
-        ctx.moveTo(padding, height - padding);
-        ctx.lineTo(width - padding, padding);
-        ctx.strokeStyle = '#ccc';
+        ctx.moveTo(padding.left, height - padding.bottom);
+        ctx.lineTo(width - padding.right, padding.top);
+        ctx.strokeStyle = '#aaa';
         ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([3, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
         
         // Draw ROC curve
         ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#1a73e8';
+        ctx.fillStyle = 'rgba(26, 115, 232, 0.1)';
+        
         rocData.forEach((point, i) => {
-            const x = padding + point.fpr * (width - 2 * padding);
-            const y = height - padding - point.tpr * (height - 2 * padding);
+            const x = padding.left + point.fpr * (width - padding.left - padding.right);
+            const y = height - padding.bottom - point.tpr * (height - padding.top - padding.bottom);
             
             if (i === 0) {
                 ctx.moveTo(x, y);
@@ -1070,60 +1086,77 @@ function createROCCurve(rocData, auc, currentThreshold) {
                 ctx.lineTo(x, y);
             }
         });
-        ctx.strokeStyle = '#1a73e8';
-        ctx.lineWidth = 2;
+        
+        // Fill under curve
+        ctx.lineTo(width - padding.right, height - padding.bottom);
+        ctx.lineTo(padding.left, height - padding.bottom);
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
         
         // Draw current threshold point
         const thresholdPoint = rocData.find(d => Math.abs(d.threshold - currentThreshold) < 0.01) || rocData[50];
         if (thresholdPoint) {
-            const x = padding + thresholdPoint.fpr * (width - 2 * padding);
-            const y = height - padding - thresholdPoint.tpr * (height - 2 * padding);
+            const x = padding.left + thresholdPoint.fpr * (width - padding.left - padding.right);
+            const y = height - padding.bottom - thresholdPoint.tpr * (height - padding.top - padding.bottom);
             
             ctx.beginPath();
-            ctx.arc(x, y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#ff0000';
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff4444';
             ctx.fill();
             ctx.strokeStyle = '#fff';
             ctx.lineWidth = 2;
             ctx.stroke();
+        }
+        
+        // Draw tick marks and labels
+        ctx.fillStyle = '#666';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        
+        // X-axis ticks
+        for (let i = 0; i <= 1; i += 0.2) {
+            const x = padding.left + i * (width - padding.left - padding.right);
+            const y = height - padding.bottom;
+            
+            // Tick mark
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y + 5);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.stroke();
             
             // Label
-            ctx.fillStyle = '#ff0000';
-            ctx.font = 'bold 12px Arial';
-            ctx.fillText(`Threshold: ${currentThreshold.toFixed(2)}`, x + 10, y - 10);
+            ctx.fillText(i.toFixed(1), x, y + 18);
         }
         
-        // Draw grid lines
-        ctx.strokeStyle = '#eee';
-        ctx.lineWidth = 0.5;
-        
-        // Vertical grid lines
+        // Y-axis ticks
+        ctx.textAlign = 'right';
         for (let i = 0; i <= 1; i += 0.2) {
-            const x = padding + i * (width - 2 * padding);
+            const y = height - padding.bottom - i * (height - padding.top - padding.bottom);
+            
+            // Tick mark
             ctx.beginPath();
-            ctx.moveTo(x, padding);
-            ctx.lineTo(x, height - padding);
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(padding.left - 5, y);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
             ctx.stroke();
             
-            // Tick labels
-            ctx.fillStyle = '#666';
-            ctx.font = '10px Arial';
-            ctx.fillText(i.toFixed(1), x - 5, height - padding + 15);
+            // Label
+            ctx.fillText(i.toFixed(1), padding.left - 8, y + 3);
         }
         
-        // Horizontal grid lines
-        for (let i = 0; i <= 1; i += 0.2) {
-            const y = height - padding - i * (height - 2 * padding);
-            ctx.beginPath();
-            ctx.moveTo(padding, y);
-            ctx.lineTo(width - padding, y);
-            ctx.stroke();
-            
-            // Tick labels
-            ctx.fillStyle = '#666';
-            ctx.font = '10px Arial';
-            ctx.fillText(i.toFixed(1), padding - 20, y + 3);
+        // AUC label
+        ctx.fillStyle = '#1a73e8';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText(`AUC = ${auc.toFixed(3)}`, padding.left + 10, padding.top + 20);
+        
+        if (thresholdPoint) {
+            ctx.fillStyle = '#ff4444';
+            ctx.fillText(`Threshold = ${currentThreshold.toFixed(2)}`, padding.left + 10, padding.top + 40);
         }
     }, 100);
 }
@@ -1313,8 +1346,8 @@ function visualizeSigmoid() {
             <h3>Sigmoid Activation Function</h3>
             <p>The sigmoid function converts any real number to a value between 0 and 1:</p>
             <p style="text-align: center; font-size: 1.2em;"><strong>σ(z) = 1 / (1 + e^(-z))</strong></p>
-            <div style="position: relative; width: 100%; max-width: 600px; margin: 20px auto;">
-                <canvas id="sigmoid-canvas" width="600" height="450" style="border: 1px solid #ddd; background: white;"></canvas>
+            <div style="position: relative; width: 100%; max-width: 450px; margin: 20px auto;">
+                <canvas id="sigmoid-canvas" width="450" height="350" style="border: 1px solid #ddd; background: white;"></canvas>
             </div>
             <div style="margin-top: 20px;">
                 <h4>Properties:</h4>
@@ -1340,58 +1373,63 @@ function visualizeSigmoid() {
         const height = canvas.height;
         const centerX = width / 2;
         const centerY = height / 2;
+        const padding = { top: 20, right: 20, bottom: 50, left: 60 };
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
         
         // Draw grid
         ctx.strokeStyle = '#f0f0f0';
-        ctx.lineWidth = 0.5;
+        ctx.lineWidth = 1;
         
         // Vertical grid lines
-        for (let x = -6; x <= 6; x += 1) {
-            const canvasX = centerX + x * 40;
+        for (let x = -5; x <= 5; x += 1) {
+            const canvasX = centerX + x * 35;
             ctx.beginPath();
-            ctx.moveTo(canvasX, 50);
-            ctx.lineTo(canvasX, height - 70);
+            ctx.moveTo(canvasX, padding.top);
+            ctx.lineTo(canvasX, height - padding.bottom);
             ctx.stroke();
         }
         
         // Horizontal grid lines
-        for (let y = 0; y <= 1; y += 0.1) {
-            const canvasY = centerY - y * 200;
+        for (let y = 0; y <= 1; y += 0.2) {
+            const canvasY = centerY - y * 120;
             ctx.beginPath();
-            ctx.moveTo(70, canvasY);
-            ctx.lineTo(width - 70, canvasY);
+            ctx.moveTo(padding.left, canvasY);
+            ctx.lineTo(width - padding.right, canvasY);
             ctx.stroke();
         }
         
         // Draw axes
-        ctx.beginPath();
-        ctx.moveTo(70, centerY);
-        ctx.lineTo(width - 70, centerY);
-        ctx.moveTo(centerX, 50);
-        ctx.lineTo(centerX, height - 70);
         ctx.strokeStyle = '#333';
         ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, centerY);
+        ctx.lineTo(width - padding.right, centerY);
+        ctx.moveTo(centerX, padding.top);
+        ctx.lineTo(centerX, height - padding.bottom);
         ctx.stroke();
         
         // Draw axis labels
-        ctx.font = '14px Arial';
+        ctx.font = '12px Arial';
         ctx.fillStyle = '#333';
-        ctx.fillText('z (weighted input)', width - 80, centerY + 25);
+        ctx.textAlign = 'center';
+        ctx.fillText('z (weighted input)', width / 2, height - 10);
         ctx.save();
-        ctx.translate(centerX - 40, 40);
+        ctx.translate(20, height / 2);
         ctx.rotate(-Math.PI/2);
         ctx.fillText('σ(z) (output probability)', 0, 0);
         ctx.restore();
         
         // Draw sigmoid curve
         ctx.beginPath();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#1a73e8';
+        
         for (let x = -6; x <= 6; x += 0.1) {
             const y = 1 / (1 + Math.exp(-x));
-            const canvasX = centerX + x * 40;
-            const canvasY = centerY - y * 200;
+            const canvasX = centerX + x * 35;
+            const canvasY = centerY - y * 120;
             
             if (x === -6) {
                 ctx.moveTo(canvasX, canvasY);
@@ -1399,82 +1437,86 @@ function visualizeSigmoid() {
                 ctx.lineTo(canvasX, canvasY);
             }
         }
-        ctx.strokeStyle = '#1a73e8';
-        ctx.lineWidth = 3;
         ctx.stroke();
         
-        // Mark key points and decision boundary
-        ctx.fillStyle = '#1a73e8';
-        ctx.font = '12px Arial';
+        // Draw tick marks and labels
+        ctx.fillStyle = '#666';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
         
-        // Decision boundary at z=0, σ(0)=0.5
+        // X-axis ticks
+        for (let x = -5; x <= 5; x += 1) {
+            const canvasX = centerX + x * 35;
+            const canvasY = centerY;
+            
+            // Tick mark
+            ctx.beginPath();
+            ctx.moveTo(canvasX, canvasY);
+            ctx.lineTo(canvasX, canvasY + 5);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Label
+            ctx.fillText(x, canvasX, canvasY + 18);
+        }
+        
+        // Y-axis ticks
+        ctx.textAlign = 'right';
+        for (let y = 0; y <= 1; y += 0.2) {
+            const canvasY = centerY - y * 120;
+            
+            // Tick mark
+            ctx.beginPath();
+            ctx.moveTo(centerX, canvasY);
+            ctx.lineTo(centerX - 5, canvasY);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Label
+            ctx.fillText(y.toFixed(1), centerX - 8, canvasY + 3);
+        }
+        
+        // Mark decision boundary
         const zeroX = centerX;
-        const zeroY = centerY - 0.5 * 200;
-        ctx.beginPath();
-        ctx.arc(zeroX, zeroY, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#1a73e8';
-        ctx.font = 'bold 12px Arial';
-        ctx.fillText('σ(0)=0.5', zeroX - 30, zeroY - 15);
-        ctx.fillText('(Decision Boundary)', zeroX - 50, zeroY + 15);
+        const zeroY = centerY - 0.5 * 120;
         
-        // Draw horizontal line at y=0.5
         ctx.beginPath();
-        ctx.moveTo(70, zeroY);
-        ctx.lineTo(width - 70, zeroY);
-        ctx.strokeStyle = '#999';
+        ctx.arc(zeroX, zeroY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff4444';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Draw decision boundary line
+        ctx.beginPath();
+        ctx.moveTo(padding.left, zeroY);
+        ctx.lineTo(width - padding.right, zeroY);
+        ctx.strokeStyle = '#ff4444';
         ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([3, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
         
         // Draw regions
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
-        ctx.fillRect(70, zeroY, zeroX - 70, 200);
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-        ctx.fillRect(zeroX, zeroY, width - 70 - zeroX, 200);
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.08)';
+        ctx.fillRect(padding.left, zeroY, centerX - padding.left, 120);
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
+        ctx.fillRect(centerX, zeroY, width - padding.right - centerX, 120);
         
+        // Label regions
         ctx.fillStyle = '#333';
-        ctx.font = 'bold 14px Arial';
-        ctx.fillText('Predict "Not Survived"', 120, zeroY + 80);
-        ctx.fillText('(σ(z) < 0.5)', 140, zeroY + 100);
-        ctx.fillText('Predict "Survived"', zeroX + 40, zeroY + 80);
-        ctx.fillText('(σ(z) > 0.5)', zeroX + 60, zeroY + 100);
-        
-        // Draw tick marks and labels
-        ctx.fillStyle = '#666';
         ctx.font = '11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', padding.left + 80, zeroY + 60);
+        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', width - padding.right - 80, zeroY + 60);
         
-        // X-axis ticks
-        for (let x = -5; x <= 5; x += 1) {
-            const canvasX = centerX + x * 40;
-            ctx.beginPath();
-            ctx.moveTo(canvasX, centerY - 5);
-            ctx.lineTo(canvasX, centerY + 5);
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            ctx.fillText(x.toString(), canvasX - 3, centerY + 20);
-        }
-        
-        // Y-axis ticks
-        for (let y = 0; y <= 1; y += 0.2) {
-            const canvasY = centerY - y * 200;
-            ctx.beginPath();
-            ctx.moveTo(centerX - 5, canvasY);
-            ctx.lineTo(centerX + 5, canvasY);
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            ctx.fillText(y.toFixed(1), centerX - 25, canvasY + 3);
-        }
-        
-        // Draw formula
-        ctx.fillStyle = '#1a73e8';
-        ctx.font = 'bold 16px Arial';
-        ctx.fillText('σ(z) = 1 / (1 + e^(-z))', centerX - 100, 35);
+        // Label decision boundary
+        ctx.fillStyle = '#ff4444';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText('σ(0) = 0.5 (Decision Boundary)', zeroX, zeroY - 10);
     }, 100);
 }
 
@@ -1681,8 +1723,8 @@ function createPermutationImportanceChart(importanceData, baselineAccuracy) {
     
     const chartHTML = `
         <h4>Feature Importance Visualization</h4>
-        <div style="position: relative; width: 100%; max-width: 600px; margin: 20px auto;">
-            <canvas id="permutation-canvas" width="600" height="400" style="border: 1px solid #ddd; background: white;"></canvas>
+        <div style="position: relative; width: 100%; max-width: 500px; margin: 20px auto;">
+            <canvas id="permutation-canvas" width="500" height="350" style="border: 1px solid #ddd; background: white;"></canvas>
         </div>
     `;
     
@@ -1695,30 +1737,30 @@ function createPermutationImportanceChart(importanceData, baselineAccuracy) {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-        const padding = { top: 40, right: 20, bottom: 80, left: 150 };
+        const padding = { top: 30, right: 20, bottom: 60, left: 150 };
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
         
         // Calculate dimensions
         const maxImportance = Math.max(...importanceData.map(d => Math.abs(d.importance)));
-        const barHeight = 25;
-        const gap = 8;
+        const barHeight = 20;
+        const gap = 5;
         const chartWidth = width - padding.left - padding.right;
         
         // Draw baseline line
         ctx.beginPath();
         const baselineX = padding.left + chartWidth * 0.5;
-        ctx.moveTo(baselineX, padding.top - 20);
+        ctx.moveTo(baselineX, padding.top - 15);
         ctx.lineTo(baselineX, padding.top + importanceData.length * (barHeight + gap));
         ctx.strokeStyle = '#999';
         ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([3, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
         
         ctx.fillStyle = '#666';
-        ctx.font = '12px Arial';
+        ctx.font = '11px Arial';
         ctx.textAlign = 'center';
         ctx.fillText('Baseline', baselineX, padding.top - 5);
         
@@ -1734,44 +1776,45 @@ function createPermutationImportanceChart(importanceData, baselineAccuracy) {
             
             // Draw feature name
             ctx.fillStyle = '#333';
-            ctx.font = '11px Arial';
+            ctx.font = '10px Arial';
             ctx.textAlign = 'right';
             
             // Truncate long feature names
             let displayName = item.feature;
-            if (displayName.length > 20) {
-                displayName = displayName.substring(0, 20) + '...';
+            if (displayName.length > 25) {
+                displayName = displayName.substring(0, 25) + '...';
             }
             
-            ctx.fillText(displayName, padding.left - 10, y + barHeight / 2 + 4);
+            ctx.fillText(displayName, padding.left - 10, y + barHeight / 2 + 3);
             
             // Draw importance value
             ctx.fillStyle = item.importance >= 0 ? '#2e7d32' : '#c62828';
-            ctx.font = 'bold 11px Arial';
+            ctx.font = 'bold 10px Arial';
             ctx.textAlign = item.importance >= 0 ? 'left' : 'right';
             const valueX = item.importance >= 0 ? baselineX + barWidth + 5 : baselineX - barWidth - 5;
-            ctx.fillText(Math.abs(item.importance).toFixed(4), valueX, y + barHeight / 2 + 4);
+            ctx.fillText(Math.abs(item.importance).toFixed(4), valueX, y + barHeight / 2 + 3);
         });
         
         // Draw title
         ctx.fillStyle = '#333';
-        ctx.font = 'bold 16px Arial';
+        ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Permutation Feature Importance', width / 2, 20);
+        ctx.fillText('Permutation Feature Importance', width / 2, 15);
         
         // Draw legend
         ctx.fillStyle = 'rgba(76, 175, 80, 0.8)';
-        ctx.fillRect(width - 200, height - 70, 15, 15);
+        ctx.fillRect(width - 180, height - 60, 12, 12);
         ctx.fillStyle = 'rgba(244, 67, 54, 0.8)';
-        ctx.fillRect(width - 200, height - 45, 15, 15);
+        ctx.fillRect(width - 180, height - 40, 12, 12);
         
         ctx.fillStyle = '#333';
-        ctx.font = '12px Arial';
+        ctx.font = '11px Arial';
         ctx.textAlign = 'left';
-        ctx.fillText('Predicts Survival (positive)', width - 180, height - 60);
-        ctx.fillText('Predicts Not Survived (negative)', width - 180, height - 35);
+        ctx.fillText('Predicts Survival (positive)', width - 160, height - 50);
+        ctx.fillText('Predicts Not Survived (negative)', width - 160, height - 30);
         
         // Draw x-axis label
+        ctx.textAlign = 'center';
         ctx.fillText('Importance (accuracy drop when feature is shuffled)', width / 2, height - 10);
     }, 100);
 }
@@ -1779,7 +1822,4 @@ function createPermutationImportanceChart(importanceData, baselineAccuracy) {
 // Initialize the application
 window.addEventListener('DOMContentLoaded', function() {
     console.log('Titanic Survival Classifier initialized');
-    
-    // Add event listener for load data button
-    document.getElementById('load-data-btn').onclick = loadData;
 });
