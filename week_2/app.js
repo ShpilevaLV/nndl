@@ -283,13 +283,13 @@ function createVisualizations() {
             survivalRate: (stats.survived / stats.total) * 100
         }));
         
-        // Create surface for Sex chart
+        // Create surface for Sex chart - УВЕЛИЧЕН РАЗМЕР
         tfvis.render.barchart(
             { 
                 name: 'Survival Rate by Sex', 
                 tab: 'Charts',
                 styles: { 
-                    height: '350px',
+                    height: '380px',
                     width: '100%'
                 }
             },
@@ -297,25 +297,25 @@ function createVisualizations() {
             {
                 xLabel: 'Sex',
                 yLabel: 'Survival Rate (%)',
-                width: 400,
-                height: 300,
-                fontSize: 12,
-                tickFontSize: 11,
-                labelFontSize: 12,
-                marginTop: 40,
-                marginBottom: 50,
-                marginLeft: 60,
-                marginRight: 20
+                width: 450,
+                height: 350,
+                fontSize: 13,
+                tickFontSize: 12,
+                labelFontSize: 13,
+                marginTop: 50,
+                marginBottom: 60,
+                marginLeft: 70,
+                marginRight: 30
             }
         );
         
-        // Create surface for Pclass chart
+        // Create surface for Pclass chart - УВЕЛИЧЕН РАЗМЕР
         tfvis.render.barchart(
             { 
                 name: 'Survival Rate by Passenger Class', 
                 tab: 'Charts',
                 styles: { 
-                    height: '350px',
+                    height: '380px',
                     width: '100%'
                 }
             },
@@ -323,19 +323,19 @@ function createVisualizations() {
             {
                 xLabel: 'Passenger Class',
                 yLabel: 'Survival Rate (%)',
-                width: 400,
-                height: 300,
-                fontSize: 12,
-                tickFontSize: 11,
-                labelFontSize: 12,
-                marginTop: 40,
-                marginBottom: 50,
-                marginLeft: 60,
-                marginRight: 20
+                width: 450,
+                height: 350,
+                fontSize: 13,
+                tickFontSize: 12,
+                labelFontSize: 13,
+                marginTop: 50,
+                marginBottom: 60,
+                marginLeft: 70,
+                marginRight: 30
             }
         );
         
-        // Age distribution by survival
+        // Age distribution by survival - УВЕЛИЧЕН РАЗМЕР
         const survivedAges = trainData
             .filter(row => row.Age !== null && row.Survived === 1)
             .map(row => row.Age);
@@ -348,7 +348,7 @@ function createVisualizations() {
                 name: 'Age Distribution by Survival', 
                 tab: 'Charts',
                 styles: { 
-                    height: '350px',
+                    height: '380px',
                     width: '100%'
                 }
             },
@@ -358,26 +358,28 @@ function createVisualizations() {
                 label: 'Not Survived'
             },
             {
-                width: 400,
-                height: 300,
+                width: 450,
+                height: 350,
                 xLabel: 'Age',
                 yLabel: 'Count',
-                fontSize: 12,
-                tickFontSize: 11,
-                labelFontSize: 12,
-                marginTop: 40,
-                marginBottom: 50,
-                marginLeft: 60,
-                marginRight: 20,
-                legendFontSize: 11
+                fontSize: 13,
+                tickFontSize: 12,
+                labelFontSize: 13,
+                marginTop: 50,
+                marginBottom: 60,
+                marginLeft: 70,
+                marginRight: 30,
+                legendFontSize: 12
             }
         );
         
         // Add a help button to open the charts panel
-        const helpButton = document.createElement('div');
+        const helpButton = document.createElement('button');
         helpButton.className = 'chart-help';
         helpButton.innerHTML = '<i class="fas fa-chart-bar"></i> Click here to open charts panel';
-        helpButton.onclick = openChartsPanel;
+        helpButton.onclick = function() {
+            openChartsPanel();
+        };
         
         chartsDiv.appendChild(helpButton);
         
@@ -443,8 +445,8 @@ function createVisualizations() {
     }
 }
 
-// Open charts panel function
-function openChartsPanel() {
+// Open charts panel function - ГЛОБАЛЬНАЯ ФУНКЦИЯ
+window.openChartsPanel = function() {
     if (typeof tfvis !== 'undefined') {
         const visor = tfvis.visor();
         if (!visor.isOpen()) {
@@ -787,14 +789,14 @@ async function trainModel() {
                 { 
                     name: 'Training Performance',
                     tab: 'Training',
-                    styles: { height: '350px', width: '100%' }
+                    styles: { height: '380px', width: '100%' }
                 },
                 ['loss', 'acc', 'val_loss', 'val_acc'],
                 {
-                    height: 300,
-                    width: 400,
-                    fontSize: 11,
-                    tickFontSize: 10
+                    height: 350,
+                    width: 450,
+                    fontSize: 12,
+                    tickFontSize: 11
                 }
             ));
         }
@@ -1148,15 +1150,15 @@ function createROCCurve(rocData, auc, currentThreshold) {
             ctx.fillText(i.toFixed(1), padding.left - 8, y + 3);
         }
         
-        // AUC label
+        // AUC label - ПЕРЕМЕЩЕН ВПРАВО
         ctx.fillStyle = '#1a73e8';
         ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText(`AUC = ${auc.toFixed(3)}`, padding.left + 10, padding.top + 20);
+        ctx.textAlign = 'right';
+        ctx.fillText(`AUC = ${auc.toFixed(3)}`, width - padding.right - 10, padding.top + 20);
         
         if (thresholdPoint) {
             ctx.fillStyle = '#ff4444';
-            ctx.fillText(`Threshold = ${currentThreshold.toFixed(2)}`, padding.left + 10, padding.top + 40);
+            ctx.fillText(`Threshold = ${currentThreshold.toFixed(2)}`, width - padding.right - 10, padding.top + 40);
         }
     }, 100);
 }
@@ -1506,17 +1508,18 @@ function visualizeSigmoid() {
         ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
         ctx.fillRect(centerX, zeroY, width - padding.right - centerX, 120);
         
-        // Label regions
+        // Label regions - ПЕРЕМЕЩЕНЫ НИЖЕ ОСИ
         ctx.fillStyle = '#333';
         ctx.font = '11px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', padding.left + 80, zeroY + 60);
-        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', width - padding.right - 80, zeroY + 60);
+        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', padding.left + 80, height - 20);
+        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', width - padding.right - 80, height - 20);
         
-        // Label decision boundary
+        // Label decision boundary - ПЕРЕМЕЩЕНА ВПРАВО
         ctx.fillStyle = '#ff4444';
         ctx.font = 'bold 12px Arial';
-        ctx.fillText('σ(0) = 0.5 (Decision Boundary)', zeroX, zeroY - 10);
+        ctx.textAlign = 'right';
+        ctx.fillText('σ(0) = 0.5 (Decision Boundary)', width - padding.right - 10, zeroY - 10);
     }, 100);
 }
 
