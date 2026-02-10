@@ -45,6 +45,11 @@
             margin-top: 20px;
             font-size: 1.3em;
         }
+        h4 {
+            color: #444;
+            margin-top: 15px;
+            font-size: 1.1em;
+        }
         section {
             margin-bottom: 35px;
             padding: 25px;
@@ -382,47 +387,12 @@
             margin: 8px 0;
         }
         
-        /* Styles for tfjs-vis */
-        .tfjs-visor {
-            z-index: 10000 !important;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        
-        .tfjs-visor__content {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-            padding: 10px !important;
-        }
-        
-        .tfjs-visor__toolbar {
-            background: linear-gradient(to right, #1a73e8, #4285f4) !important;
-        }
-        
-        .tfjs-visor__toolbar-button {
-            color: white !important;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        
-        .tfjs-surface {
-            margin: 10px !important;
-            padding: 15px !important;
-            background: white !important;
-            border-radius: 8px !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-            border: 1px solid #e0e0e0 !important;
-        }
-        
-        /* Fix for chart labels */
-        .tfjs-chart canvas {
-            margin: 0 auto !important;
-            display: block !important;
-        }
-        
         /* Custom button to open charts */
-        #open-charts-btn {
+        .chart-help {
+            margin: 15px 0;
+            padding: 12px 20px;
             background: linear-gradient(to right, #4CAF50, #45a049);
             color: white;
-            padding: 12px 20px;
-            border: none;
             border-radius: 6px;
             cursor: pointer;
             display: inline-flex;
@@ -430,34 +400,28 @@
             gap: 8px;
             font-weight: 600;
             transition: all 0.3s ease;
-            margin: 10px 0;
+            border: none;
             font-size: 14px;
         }
         
-        #open-charts-btn:hover {
+        .chart-help:hover {
             background: linear-gradient(to right, #45a049, #3d8b40);
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         
-        #open-charts-btn i {
-            font-size: 1.2em;
+        .chart-help i {
+            font-size: 1.1em;
         }
         
-        /* Enhanced chart styles */
-        .chart-container {
-            position: relative;
+        /* Improved canvas styling */
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 8px;
         }
         
-        .chart-legend {
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px 15px;
-            border-radius: 5px;
-            border: 1px solid #e0e0e0;
-            margin-top: 10px;
-            font-size: 0.9em;
-        }
-        
+        /* Better responsive design */
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -481,9 +445,32 @@
             h2 {
                 font-size: 1.3em;
             }
-            #open-charts-btn {
+            .chart-help {
                 width: 100%;
                 justify-content: center;
+            }
+            canvas {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .container {
+                padding: 10px;
+            }
+            section {
+                padding: 15px;
+            }
+            h1 {
+                font-size: 1.5em;
+            }
+            h2 {
+                font-size: 1.2em;
+            }
+            button {
+                padding: 10px 16px;
+                font-size: 14px;
             }
         }
     </style>
@@ -511,7 +498,7 @@
                 </label>
                 <input type="file" id="test-file" accept=".csv">
             </div>
-            <button id="load-data-btn">
+            <button id="load-data-btn" onclick="loadData()">
                 <span class="status-indicator status-not-ready"></span>📁 Load Data
             </button>
             <div id="data-status"></div>
