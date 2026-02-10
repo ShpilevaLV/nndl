@@ -6,6 +6,7 @@
     <title>Titanic Survival Classifier - TensorFlow.js</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@latest"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="app.js"></script>
     <style>
         body {
@@ -380,6 +381,82 @@
         footer p {
             margin: 8px 0;
         }
+        
+        /* Styles for tfjs-vis */
+        .tfjs-visor {
+            z-index: 10000 !important;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+        }
+        
+        .tfjs-visor__content {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+            padding: 10px !important;
+        }
+        
+        .tfjs-visor__toolbar {
+            background: linear-gradient(to right, #1a73e8, #4285f4) !important;
+        }
+        
+        .tfjs-visor__toolbar-button {
+            color: white !important;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+        }
+        
+        .tfjs-surface {
+            margin: 10px !important;
+            padding: 15px !important;
+            background: white !important;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+            border: 1px solid #e0e0e0 !important;
+        }
+        
+        /* Fix for chart labels */
+        .tfjs-chart canvas {
+            margin: 0 auto !important;
+            display: block !important;
+        }
+        
+        /* Custom button to open charts */
+        .chart-help {
+            margin: 15px 0;
+            padding: 12px 20px;
+            background: linear-gradient(to right, #4CAF50, #45a049);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+        }
+        
+        .chart-help:hover {
+            background: linear-gradient(to right, #45a049, #3d8b40);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .chart-help i {
+            font-size: 1.2em;
+        }
+        
+        /* Enhanced chart styles */
+        .chart-container {
+            position: relative;
+        }
+        
+        .chart-legend {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -402,6 +479,10 @@
             }
             h2 {
                 font-size: 1.3em;
+            }
+            .chart-help {
+                width: 100%;
+                justify-content: center;
             }
         }
     </style>
