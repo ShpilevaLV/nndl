@@ -418,11 +418,11 @@
         }
         
         /* Custom button to open charts */
-        .chart-help {
-            margin: 15px 0;
-            padding: 12px 20px;
+        #open-charts-btn {
             background: linear-gradient(to right, #4CAF50, #45a049);
             color: white;
+            padding: 12px 20px;
+            border: none;
             border-radius: 6px;
             cursor: pointer;
             display: inline-flex;
@@ -430,16 +430,17 @@
             gap: 8px;
             font-weight: 600;
             transition: all 0.3s ease;
-            border: none;
+            margin: 10px 0;
+            font-size: 14px;
         }
         
-        .chart-help:hover {
+        #open-charts-btn:hover {
             background: linear-gradient(to right, #45a049, #3d8b40);
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         
-        .chart-help i {
+        #open-charts-btn i {
             font-size: 1.2em;
         }
         
@@ -480,7 +481,7 @@
             h2 {
                 font-size: 1.3em;
             }
-            .chart-help {
+            #open-charts-btn {
                 width: 100%;
                 justify-content: center;
             }
@@ -510,7 +511,7 @@
                 </label>
                 <input type="file" id="test-file" accept=".csv">
             </div>
-            <button id="load-data-btn" onclick="loadData()">
+            <button id="load-data-btn">
                 <span class="status-indicator status-not-ready"></span>📁 Load Data
             </button>
             <div id="data-status"></div>
