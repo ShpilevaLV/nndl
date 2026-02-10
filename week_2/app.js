@@ -283,7 +283,7 @@ function createVisualizations() {
             survivalRate: (stats.survived / stats.total) * 100
         }));
         
-        // Create surface for Sex chart - УВЕЛИЧЕН РАЗМЕР
+        // Create surface for Sex chart
         tfvis.render.barchart(
             { 
                 name: 'Survival Rate by Sex', 
@@ -302,14 +302,14 @@ function createVisualizations() {
                 fontSize: 13,
                 tickFontSize: 12,
                 labelFontSize: 13,
-                marginTop: 50,
+                marginTop: 45,
                 marginBottom: 60,
                 marginLeft: 70,
                 marginRight: 30
             }
         );
         
-        // Create surface for Pclass chart - УВЕЛИЧЕН РАЗМЕР
+        // Create surface for Pclass chart
         tfvis.render.barchart(
             { 
                 name: 'Survival Rate by Passenger Class', 
@@ -328,14 +328,14 @@ function createVisualizations() {
                 fontSize: 13,
                 tickFontSize: 12,
                 labelFontSize: 13,
-                marginTop: 50,
+                marginTop: 45,
                 marginBottom: 60,
                 marginLeft: 70,
                 marginRight: 30
             }
         );
         
-        // Age distribution by survival - УВЕЛИЧЕН РАЗМЕР
+        // Age distribution by survival
         const survivedAges = trainData
             .filter(row => row.Age !== null && row.Survived === 1)
             .map(row => row.Age);
@@ -365,7 +365,7 @@ function createVisualizations() {
                 fontSize: 13,
                 tickFontSize: 12,
                 labelFontSize: 13,
-                marginTop: 50,
+                marginTop: 45,
                 marginBottom: 60,
                 marginLeft: 70,
                 marginRight: 30,
@@ -374,12 +374,10 @@ function createVisualizations() {
         );
         
         // Add a help button to open the charts panel
-        const helpButton = document.createElement('button');
+        const helpButton = document.createElement('div');
         helpButton.className = 'chart-help';
         helpButton.innerHTML = '<i class="fas fa-chart-bar"></i> Click here to open charts panel';
-        helpButton.onclick = function() {
-            openChartsPanel();
-        };
+        helpButton.onclick = openChartsPanel;
         
         chartsDiv.appendChild(helpButton);
         
@@ -445,24 +443,38 @@ function createVisualizations() {
     }
 }
 
-// Open charts panel function - ГЛОБАЛЬНАЯ ФУНКЦИЯ
-window.openChartsPanel = function() {
+// Open charts panel function - FIXED VERSION
+function openChartsPanel() {
     if (typeof tfvis !== 'undefined') {
-        const visor = tfvis.visor();
-        if (!visor.isOpen()) {
-            visor.open();
-        }
-        // Switch to Charts tab
-        setTimeout(() => {
-            const tabs = document.querySelectorAll('.tfjs-visor__tab');
-            tabs.forEach(tab => {
-                if (tab.textContent.includes('Charts')) {
-                    tab.click();
+        try {
+            const visor = tfvis.visor();
+            if (!visor.isOpen()) {
+                visor.open();
+            }
+            // Switch to Charts tab
+            setTimeout(() => {
+                const tabs = document.querySelectorAll('.tfjs-visor__tab');
+                if (tabs.length > 0) {
+                    let foundChartsTab = false;
+                    tabs.forEach(tab => {
+                        if (tab.textContent && tab.textContent.includes('Charts')) {
+                            tab.click();
+                            foundChartsTab = true;
+                        }
+                    });
+                    
+                    // If no Charts tab found, try Training tab
+                    if (!foundChartsTab && tabs.length > 0) {
+                        tabs[0].click();
+                    }
                 }
-            });
-        }, 100);
+            }, 200); // Increased delay to ensure visor is fully loaded
+        } catch (error) {
+            console.error('Error opening charts panel:', error);
+            alert('Error opening charts panel. Please try refreshing the page or check the console for errors.');
+        }
     } else {
-        alert('tfjs-vis is not loaded. Please refresh the page.');
+        alert('tfjs-vis library is not loaded. Please make sure you have an internet connection and refresh the page.');
     }
 }
 
@@ -997,7 +1009,7 @@ function createROCCurve(rocData, auc, currentThreshold) {
     if (!container) return;
     
     container.innerHTML = `
-        <h4>ROC Curve (AUC = ${auc.toFixed(4)})</h4>
+        <h4>ROC Curve</h4>
         <div style="position: relative; width: 100%; max-width: 450px; margin: 0 auto;">
             <canvas id="roc-canvas" width="450" height="350" style="border: 1px solid #ddd; background: white;"></canvas>
         </div>
@@ -1150,15 +1162,15 @@ function createROCCurve(rocData, auc, currentThreshold) {
             ctx.fillText(i.toFixed(1), padding.left - 8, y + 3);
         }
         
-        // AUC label - ПЕРЕМЕЩЕН ВПРАВО
+        // AUC and Threshold labels in bottom right corner
         ctx.fillStyle = '#1a73e8';
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'right';
-        ctx.fillText(`AUC = ${auc.toFixed(3)}`, width - padding.right - 10, padding.top + 20);
+        ctx.fillText(`AUC = ${auc.toFixed(3)}`, width - padding.right - 10, height - padding.bottom + 25);
         
         if (thresholdPoint) {
             ctx.fillStyle = '#ff4444';
-            ctx.fillText(`Threshold = ${currentThreshold.toFixed(2)}`, width - padding.right - 10, padding.top + 40);
+            ctx.fillText(`Threshold = ${currentThreshold.toFixed(2)}`, width - padding.right - 10, height - padding.bottom + 45);
         }
     }, 100);
 }
@@ -1375,7 +1387,7 @@ function visualizeSigmoid() {
         const height = canvas.height;
         const centerX = width / 2;
         const centerY = height / 2;
-        const padding = { top: 20, right: 20, bottom: 50, left: 60 };
+        const padding = { top: 20, right: 20, bottom: 60, left: 60 };
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
@@ -1416,7 +1428,7 @@ function visualizeSigmoid() {
         ctx.font = '12px Arial';
         ctx.fillStyle = '#333';
         ctx.textAlign = 'center';
-        ctx.fillText('z (weighted input)', width / 2, height - 10);
+        ctx.fillText('z (weighted input)', width / 2, height - 15);
         ctx.save();
         ctx.translate(20, height / 2);
         ctx.rotate(-Math.PI/2);
@@ -1502,24 +1514,39 @@ function visualizeSigmoid() {
         ctx.stroke();
         ctx.setLineDash([]);
         
-        // Draw regions
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.08)';
+        // Draw regions - MADE TRANSPARENT
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.05)';
         ctx.fillRect(padding.left, zeroY, centerX - padding.left, 120);
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.08)';
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.05)';
         ctx.fillRect(centerX, zeroY, width - padding.right - centerX, 120);
         
-        // Label regions - ПЕРЕМЕЩЕНЫ НИЖЕ ОСИ
+        // Label regions - MOVED BELOW THE AXIS LABELS
         ctx.fillStyle = '#333';
         ctx.font = '11px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', padding.left + 80, height - 20);
-        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', width - padding.right - 80, height - 20);
+        // Move labels down to below the x-axis labels
+        ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', padding.left + 90, height - 35);
+        ctx.fillText('Predict "Survived" (σ(z) > 0.5)', width - padding.right - 90, height - 35);
         
-        // Label decision boundary - ПЕРЕМЕЩЕНА ВПРАВО
+        // Label decision boundary - MOVED TO RIGHT SIDE
         ctx.fillStyle = '#ff4444';
-        ctx.font = 'bold 12px Arial';
+        ctx.font = 'bold 11px Arial';
         ctx.textAlign = 'right';
         ctx.fillText('σ(0) = 0.5 (Decision Boundary)', width - padding.right - 10, zeroY - 10);
+        
+        // Draw the σ(z) and z labels more clearly
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        // σ(z) label on y-axis
+        ctx.save();
+        ctx.translate(25, height / 2);
+        ctx.rotate(-Math.PI/2);
+        ctx.fillText('σ(z)', 0, 0);
+        ctx.restore();
+        
+        // z label on x-axis
+        ctx.fillText('z', width / 2, centerY + 30);
     }, 100);
 }
 
@@ -1825,4 +1852,7 @@ function createPermutationImportanceChart(importanceData, baselineAccuracy) {
 // Initialize the application
 window.addEventListener('DOMContentLoaded', function() {
     console.log('Titanic Survival Classifier initialized');
+    
+    // Add global function to open charts panel
+    window.openChartsPanel = openChartsPanel;
 });
