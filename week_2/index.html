@@ -390,10 +390,10 @@
         /* Custom button to open charts */
         .chart-help {
             margin: 15px 0;
-            padding: 12px 24px;
+            padding: 12px 20px;
             background: linear-gradient(to right, #4CAF50, #45a049);
             color: white;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
@@ -401,8 +401,7 @@
             font-weight: 600;
             transition: all 0.3s ease;
             border: none;
-            font-size: 16px;
-            min-width: 250px;
+            font-size: 14px;
         }
         
         .chart-help:hover {
@@ -412,7 +411,7 @@
         }
         
         .chart-help i {
-            font-size: 1.2em;
+            font-size: 1.1em;
         }
         
         /* Improved canvas styling */
@@ -420,6 +419,28 @@
             display: block;
             margin: 0 auto;
             border-radius: 8px;
+        }
+        
+        /* tfjs-vis customization */
+        .tfjs-visor {
+            z-index: 10000 !important;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+        }
+        
+        .tfjs-visor__toolbar {
+            background: linear-gradient(to right, #1a73e8, #4285f4) !important;
+        }
+        
+        .tfjs-visor__toolbar-button {
+            color: white !important;
+        }
+        
+        .tfjs-surface {
+            background: white !important;
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 8px !important;
+            margin: 10px !important;
+            padding: 15px !important;
         }
         
         /* Better responsive design */
@@ -440,15 +461,15 @@
                 width: 100%;
                 margin: 8px 0;
             }
-            .chart-help {
-                width: 100%;
-                justify-content: center;
-            }
             h1 {
                 font-size: 1.8em;
             }
             h2 {
                 font-size: 1.3em;
+            }
+            .chart-help {
+                width: 100%;
+                justify-content: center;
             }
             canvas {
                 max-width: 100% !important;
@@ -470,10 +491,6 @@
                 font-size: 1.2em;
             }
             button {
-                padding: 10px 16px;
-                font-size: 14px;
-            }
-            .chart-help {
                 padding: 10px 16px;
                 font-size: 14px;
             }
