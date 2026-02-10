@@ -42,9 +42,13 @@ async function loadData() {
         
         // Enable the inspect button
         document.getElementById('inspect-btn').disabled = false;
+        
+        // Update status indicators
+        updateStatusIndicator('inspect-btn', 'ready');
     } catch (error) {
         statusDiv.innerHTML = `Error loading data: ${error.message}`;
         console.error(error);
+        updateStatusIndicator('inspect-btn', 'not-ready');
     }
 }
 
@@ -216,6 +220,19 @@ function inspectData() {
     
     // Enable the preprocess button
     document.getElementById('preprocess-btn').disabled = false;
+    updateStatusIndicator('preprocess-btn', 'ready');
+}
+
+// Update status indicator
+function updateStatusIndicator(buttonId, status) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    
+    const indicator = button.querySelector('.status-indicator');
+    if (!indicator) return;
+    
+    indicator.classList.remove('status-ready', 'status-not-ready', 'status-processing');
+    indicator.classList.add(`status-${status}`);
 }
 
 // Create visualizations using tfjs-vis
@@ -223,110 +240,293 @@ function createVisualizations() {
     const chartsDiv = document.getElementById('charts');
     chartsDiv.innerHTML = '<h3>Data Visualizations</h3>';
     
-    // Survival by Sex
-    const survivalBySex = {};
-    trainData.forEach(row => {
-        if (row.Sex && row.Survived !== undefined) {
-            if (!survivalBySex[row.Sex]) {
-                survivalBySex[row.Sex] = { survived: 0, total: 0 };
-            }
-            survivalBySex[row.Sex].total++;
-            if (row.Survived === 1) {
-                survivalBySex[row.Sex].survived++;
-            }
+    try {
+        // Ensure tfvis is available and visor is open
+        if (typeof tfvis === 'undefined') {
+            throw new Error('tfjs-vis not loaded');
         }
-    });
-    
-    const sexData = Object.entries(survivalBySex).map(([sex, stats]) => ({
-        sex,
-        survivalRate: (stats.survived / stats.total) * 100
-    }));
-    
-    if (typeof tfvis !== 'undefined') {
+        
+        // Open the visor to ensure it's visible
+        const visorInstance = tfvis.visor();
+        if (!visorInstance.isOpen()) {
+            visorInstance.open();
+        }
+        
+        // Survival by Sex
+        const survivalBySex = {};
+        trainData.forEach(row => {
+            if (row.Sex && row.Survived !== undefined && row.Sex !== null) {
+                if (!survivalBySex[row.Sex]) {
+                    survivalBySex[row.Sex] = { survived: 0, total: 0 };
+                }
+                survivalBySex[row.Sex].total++;
+                if (row.Survived === 1) {
+                    survivalBySex[row.Sex].survived++;
+                }
+            }
+        });
+        
+        const sexData = Object.entries(survivalBySex).map(([sex, stats]) => ({
+            sex,
+            survivalRate: (stats.survived / stats.total) * 100
+        }));
+        
+        // Create chart with explicit margins and padding
+        const sexSurface = { 
+            name: 'Survival Rate by Sex', 
+            tab: 'Charts', 
+            styles: { 
+                width: '95%', 
+                height: '400px',
+                margin: '20px',
+                padding: '20px'
+            } 
+        };
+        
         tfvis.render.barchart(
-            { name: 'Survival Rate by Sex', tab: 'Charts' },
+            sexSurface,
             sexData.map(d => ({ x: d.sex, y: d.survivalRate })),
-            { xLabel: 'Sex', yLabel: 'Survival Rate (%)' }
+            {
+                xLabel: 'Sex',
+                yLabel: 'Survival Rate (%)',
+                width: 500,
+                height: 400,
+                fontSize: 16,
+                xAxisDomain: Object.keys(survivalBySex),
+                yAxisDomain: [0, 100],
+                tickFontSize: 14,
+                labelFontSize: 16,
+                marginTop: 60,
+                marginBottom: 80,
+                marginLeft: 90,
+                marginRight: 40,
+                labelPadding: 15,
+                tickPadding: 10,
+                axisLabelFontSize: 16
+            }
         );
-    } else {
-        // Fallback to simple HTML visualization
-        createSimpleBarChart('Survival Rate by Sex', sexData, chartsDiv);
-    }
-    
-    // Survival by Pclass
-    const survivalByPclass = {};
-    trainData.forEach(row => {
-        if (row.Pclass !== undefined && row.Survived !== undefined) {
-            if (!survivalByPclass[row.Pclass]) {
-                survivalByPclass[row.Pclass] = { survived: 0, total: 0 };
+        
+        // Survival by Pclass
+        const survivalByPclass = {};
+        trainData.forEach(row => {
+            if (row.Pclass !== undefined && row.Pclass !== null && row.Survived !== undefined) {
+                const pclass = `Class ${row.Pclass}`;
+                if (!survivalByPclass[pclass]) {
+                    survivalByPclass[pclass] = { survived: 0, total: 0 };
+                }
+                survivalByPclass[pclass].total++;
+                if (row.Survived === 1) {
+                    survivalByPclass[pclass].survived++;
+                }
             }
-            survivalByPclass[row.Pclass].total++;
-            if (row.Survived === 1) {
-                survivalByPclass[row.Pclass].survived++;
-            }
-        }
-    });
-    
-    const pclassData = Object.entries(survivalByPclass).map(([pclass, stats]) => ({
-        pclass: `Class ${pclass}`,
-        survivalRate: (stats.survived / stats.total) * 100
-    }));
-    
-    if (typeof tfvis !== 'undefined') {
+        });
+        
+        const pclassData = Object.entries(survivalByPclass).map(([pclass, stats]) => ({
+            pclass,
+            survivalRate: (stats.survived / stats.total) * 100
+        }));
+        
+        const pclassSurface = { 
+            name: 'Survival Rate by Passenger Class', 
+            tab: 'Charts', 
+            styles: { 
+                width: '95%', 
+                height: '400px',
+                margin: '20px',
+                padding: '20px'
+            } 
+        };
+        
         tfvis.render.barchart(
-            { name: 'Survival Rate by Passenger Class', tab: 'Charts' },
+            pclassSurface,
             pclassData.map(d => ({ x: d.pclass, y: d.survivalRate })),
-            { xLabel: 'Passenger Class', yLabel: 'Survival Rate (%)' }
+            {
+                xLabel: 'Passenger Class',
+                yLabel: 'Survival Rate (%)',
+                width: 500,
+                height: 400,
+                fontSize: 16,
+                xAxisDomain: Object.keys(survivalByPclass),
+                yAxisDomain: [0, 100],
+                tickFontSize: 14,
+                labelFontSize: 16,
+                marginTop: 60,
+                marginBottom: 80,
+                marginLeft: 90,
+                marginRight: 40,
+                labelPadding: 15,
+                tickPadding: 10,
+                axisLabelFontSize: 16
+            }
         );
-    } else {
+        
+        // Age distribution by survival
+        const survivedAges = trainData
+            .filter(row => row.Age !== null && row.Survived === 1)
+            .map(row => row.Age);
+        const notSurvivedAges = trainData
+            .filter(row => row.Age !== null && row.Survived === 0)
+            .map(row => row.Age);
+        
+        const ageSurface = { 
+            name: 'Age Distribution by Survival', 
+            tab: 'Charts', 
+            styles: { 
+                width: '95%', 
+                height: '400px',
+                margin: '20px',
+                padding: '20px'
+            } 
+        };
+        
+        tfvis.render.histogram(
+            ageSurface,
+            { values: survivedAges, label: 'Survived' },
+            {
+                values: notSurvivedAges,
+                label: 'Not Survived'
+            },
+            {
+                width: 500,
+                height: 400,
+                xLabel: 'Age',
+                yLabel: 'Count',
+                fontSize: 16,
+                tickFontSize: 14,
+                labelFontSize: 16,
+                marginTop: 60,
+                marginBottom: 80,
+                marginLeft: 90,
+                marginRight: 40,
+                labelPadding: 15,
+                tickPadding: 10,
+                axisLabelFontSize: 16,
+                legendFontSize: 14
+            }
+        );
+        
+        // Add a help button to open the charts panel
+        const helpButton = document.createElement('div');
+        helpButton.className = 'chart-help';
+        helpButton.innerHTML = '<i class="fas fa-chart-bar"></i> Click here to open charts panel';
+        helpButton.onclick = function() {
+            if (typeof tfvis !== 'undefined') {
+                const visor = tfvis.visor();
+                if (!visor.isOpen()) {
+                    visor.open();
+                }
+                // Switch to Charts tab
+                setTimeout(() => {
+                    const tabs = document.querySelectorAll('.tfjs-visor__tab');
+                    tabs.forEach(tab => {
+                        if (tab.textContent.includes('Charts')) {
+                            tab.click();
+                        }
+                    });
+                }, 100);
+            }
+        };
+        
+        chartsDiv.appendChild(helpButton);
+        
+        chartsDiv.innerHTML += `
+            <div class="success-message" style="margin-top: 20px;">
+                <p>✅ Charts created successfully!</p>
+                <p>Check the tfjs-vis panel (click the button in bottom-right corner or use the tabs: "Charts").</p>
+                <p>If charts don't appear, try:</p>
+                <ol>
+                    <li>Click the "Click here to open charts panel" button above</li>
+                    <li>Click the tfjs-vis button in the bottom-right corner</li>
+                    <li>Select the "Charts" tab in the panel</li>
+                    <li>Refresh the page if charts still don't appear</li>
+                </ol>
+            </div>
+        `;
+        
+    } catch (error) {
+        console.error('Error creating visualizations:', error);
+        
         // Fallback to simple HTML visualization
-        createSimpleBarChart('Survival Rate by Passenger Class', pclassData, chartsDiv);
+        chartsDiv.innerHTML += '<div class="error-message">Could not load tfjs-vis charts. Using fallback visualizations.</div>';
+        
+        // Calculate data for fallback charts
+        const survivalBySex = {};
+        trainData.forEach(row => {
+            if (row.Sex && row.Survived !== undefined && row.Sex !== null) {
+                if (!survivalBySex[row.Sex]) {
+                    survivalBySex[row.Sex] = { survived: 0, total: 0 };
+                }
+                survivalBySex[row.Sex].total++;
+                if (row.Survived === 1) {
+                    survivalBySex[row.Sex].survived++;
+                }
+            }
+        });
+        
+        const sexData = Object.entries(survivalBySex).map(([sex, stats]) => ({
+            sex,
+            survivalRate: (stats.survived / stats.total) * 100,
+            survived: stats.survived,
+            total: stats.total
+        }));
+        
+        createEnhancedFallbackChart('Survival Rate by Sex', sexData, chartsDiv);
+        
+        // Survival by Pclass
+        const survivalByPclass = {};
+        trainData.forEach(row => {
+            if (row.Pclass !== undefined && row.Pclass !== null && row.Survived !== undefined) {
+                const pclass = `Class ${row.Pclass}`;
+                if (!survivalByPclass[pclass]) {
+                    survivalByPclass[pclass] = { survived: 0, total: 0 };
+                }
+                survivalByPclass[pclass].total++;
+                if (row.Survived === 1) {
+                    survivalByPclass[pclass].survived++;
+                }
+            }
+        });
+        
+        const pclassData = Object.entries(survivalByPclass).map(([pclass, stats]) => ({
+            pclass,
+            survivalRate: (stats.survived / stats.total) * 100,
+            survived: stats.survived,
+            total: stats.total
+        }));
+        
+        createEnhancedFallbackChart('Survival Rate by Passenger Class', pclassData, chartsDiv);
     }
-    
-    chartsDiv.innerHTML += '<p>Charts are displayed in the tfjs-vis visor. Click the button in the bottom right to view.</p>';
 }
 
-// Create simple bar chart for fallback
-function createSimpleBarChart(title, data, container) {
+// Enhanced fallback chart with better styling
+function createEnhancedFallbackChart(title, data, container) {
     const chartDiv = document.createElement('div');
-    chartDiv.innerHTML = `<h4>${title}</h4>`;
+    chartDiv.style.margin = '30px 0';
+    chartDiv.style.padding = '20px';
+    chartDiv.style.backgroundColor = '#f8f9fa';
+    chartDiv.style.borderRadius = '10px';
+    chartDiv.style.border = '1px solid #e0e0e0';
     
-    data.forEach(item => {
-        const barDiv = document.createElement('div');
-        barDiv.style.margin = '10px 0';
-        barDiv.style.display = 'flex';
-        barDiv.style.alignItems = 'center';
-        
-        const label = document.createElement('div');
-        label.textContent = item.pclass || item.sex;
-        label.style.width = '100px';
-        label.style.marginRight = '10px';
-        
-        const barContainer = document.createElement('div');
-        barContainer.style.flex = '1';
-        barContainer.style.height = '20px';
-        barContainer.style.backgroundColor = '#f0f0f0';
-        barContainer.style.borderRadius = '4px';
-        barContainer.style.overflow = 'hidden';
-        
-        const bar = document.createElement('div');
-        bar.style.height = '100%';
-        bar.style.width = `${Math.min(item.survivalRate, 100)}%`;
-        bar.style.backgroundColor = '#1a73e8';
-        bar.style.transition = 'width 0.5s';
-        
-        const value = document.createElement('div');
-        value.textContent = `${item.survivalRate.toFixed(1)}%`;
-        value.style.marginLeft = '10px';
-        value.style.width = '60px';
-        value.style.textAlign = 'right';
-        
-        barContainer.appendChild(bar);
-        barDiv.appendChild(label);
-        barDiv.appendChild(barContainer);
-        barDiv.appendChild(value);
-        chartDiv.appendChild(barDiv);
-    });
+    chartDiv.innerHTML = `
+        <h4 style="color: #1a73e8; margin-top: 0; padding-bottom: 10px; border-bottom: 2px solid #1a73e8;">${title}</h4>
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            ${data.map(item => `
+                <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #eaeaea; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-weight: 600; font-size: 1.1em; color: #333; min-width: 150px;">${item.sex || item.pclass}</span>
+                        <span style="font-weight: 700; font-size: 1.2em; color: #1a73e8;">${item.survivalRate.toFixed(1)}%</span>
+                    </div>
+                    <div style="background: #e9ecef; height: 20px; border-radius: 10px; overflow: hidden; margin-bottom: 8px;">
+                        <div style="background: linear-gradient(to right, #1a73e8, #4285f4); height: 100%; width: ${Math.min(item.survivalRate, 100)}%; border-radius: 10px; transition: width 1s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9em; color: #666;">
+                        <span>${item.survived} survived</span>
+                        <span>${item.total} total</span>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
     
     container.appendChild(chartDiv);
 }
@@ -402,6 +602,7 @@ function preprocessData() {
         
         // Enable the create model button
         document.getElementById('create-model-btn').disabled = false;
+        updateStatusIndicator('create-model-btn', 'ready');
     } catch (error) {
         outputDiv.innerHTML = `<div class="error-message">Error during preprocessing: ${error.message}</div>`;
         console.error('Preprocessing error:', error);
@@ -584,6 +785,7 @@ function createModel() {
     
     // Enable the train button
     document.getElementById('train-btn').disabled = false;
+    updateStatusIndicator('train-btn', 'ready');
 }
 
 // Train the model
@@ -595,6 +797,7 @@ async function trainModel() {
     
     const statusDiv = document.getElementById('training-status');
     statusDiv.innerHTML = '<div class="processing">Training model...</div>';
+    updateStatusIndicator('train-btn', 'processing');
     
     try {
         // Split training data into train and validation sets (80/20)
@@ -615,8 +818,18 @@ async function trainModel() {
         
         if (typeof tfvis !== 'undefined') {
             callbacks.push(tfvis.show.fitCallbacks(
-                { name: 'Training Performance' },
-                ['loss', 'acc', 'val_loss', 'val_acc']
+                { 
+                    name: 'Training Performance',
+                    styles: { width: '95%', height: '400px' }
+                },
+                ['loss', 'acc', 'val_loss', 'val_acc'],
+                {
+                    callbacks: ['onEpochEnd', 'onBatchEnd'],
+                    height: 400,
+                    width: 600,
+                    fontSize: 14,
+                    tickFontSize: 12
+                }
             ));
         }
         
@@ -643,6 +856,7 @@ async function trainModel() {
         });
         
         statusDiv.innerHTML += '<div class="success-message"><p>✅ Training completed successfully!</p></div>';
+        updateStatusIndicator('train-btn', 'ready');
         
         // Make predictions on validation set for evaluation
         validationPredictions = model.predict(validationData);
@@ -653,18 +867,22 @@ async function trainModel() {
         
         // Enable the predict button
         document.getElementById('predict-btn').disabled = false;
+        updateStatusIndicator('predict-btn', 'ready');
         
         // Enable the sigmoid button
         document.getElementById('sigmoid-btn').disabled = false;
+        updateStatusIndicator('sigmoid-btn', 'ready');
         
         // Enable the importance button
         document.getElementById('importance-btn').disabled = false;
+        updateStatusIndicator('importance-btn', 'ready');
         
         // Calculate initial metrics
         await updateMetrics();
     } catch (error) {
         statusDiv.innerHTML = `<div class="error-message">Error during training: ${error.message}</div>`;
         console.error('Training error:', error);
+        updateStatusIndicator('train-btn', 'not-ready');
     }
 }
 
@@ -847,7 +1065,7 @@ function createROCCurve(rocData, auc, currentThreshold) {
         ctx.stroke();
         
         // Draw axis labels
-        ctx.font = '12px Arial';
+        ctx.font = '14px Arial';
         ctx.fillStyle = '#333';
         ctx.fillText('False Positive Rate', width / 2 - 40, height - 10);
         ctx.save();
@@ -898,7 +1116,40 @@ function createROCCurve(rocData, auc, currentThreshold) {
             
             // Label
             ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 12px Arial';
             ctx.fillText(`Threshold: ${currentThreshold.toFixed(2)}`, x + 10, y - 10);
+        }
+        
+        // Draw grid lines
+        ctx.strokeStyle = '#eee';
+        ctx.lineWidth = 0.5;
+        
+        // Vertical grid lines
+        for (let i = 0; i <= 1; i += 0.2) {
+            const x = padding + i * (width - 2 * padding);
+            ctx.beginPath();
+            ctx.moveTo(x, padding);
+            ctx.lineTo(x, height - padding);
+            ctx.stroke();
+            
+            // Tick labels
+            ctx.fillStyle = '#666';
+            ctx.font = '10px Arial';
+            ctx.fillText(i.toFixed(1), x - 5, height - padding + 15);
+        }
+        
+        // Horizontal grid lines
+        for (let i = 0; i <= 1; i += 0.2) {
+            const y = height - padding - i * (height - 2 * padding);
+            ctx.beginPath();
+            ctx.moveTo(padding, y);
+            ctx.lineTo(width - padding, y);
+            ctx.stroke();
+            
+            // Tick labels
+            ctx.fillStyle = '#666';
+            ctx.font = '10px Arial';
+            ctx.fillText(i.toFixed(1), padding - 20, y + 3);
         }
     }, 100);
 }
@@ -912,6 +1163,7 @@ async function predict() {
     
     const outputDiv = document.getElementById('prediction-output');
     outputDiv.innerHTML = '<div class="processing">Making predictions...</div>';
+    updateStatusIndicator('predict-btn', 'processing');
     
     try {
         // Convert test features to tensor
@@ -951,9 +1203,12 @@ async function predict() {
         
         // Enable the export button
         document.getElementById('export-btn').disabled = false;
+        updateStatusIndicator('export-btn', 'ready');
+        updateStatusIndicator('predict-btn', 'ready');
     } catch (error) {
         outputDiv.innerHTML = `<div class="error-message">Error during prediction: ${error.message}</div>`;
         console.error('Prediction error:', error);
+        updateStatusIndicator('predict-btn', 'not-ready');
     }
 }
 
@@ -1017,6 +1272,7 @@ async function exportResults() {
     
     const statusDiv = document.getElementById('export-status');
     statusDiv.innerHTML = '<div class="processing">Exporting results...</div>';
+    updateStatusIndicator('export-btn', 'processing');
     
     try {
         // Get predictions
@@ -1061,6 +1317,8 @@ async function exportResults() {
             </div>
         `;
         
+        updateStatusIndicator('export-btn', 'ready');
+        
         // Trigger downloads automatically
         setTimeout(() => {
             submissionLink.click();
@@ -1069,6 +1327,7 @@ async function exportResults() {
     } catch (error) {
         statusDiv.innerHTML = `<div class="error-message">Error during export: ${error.message}</div>`;
         console.error('Export error:', error);
+        updateStatusIndicator('export-btn', 'not-ready');
     }
 }
 
@@ -1179,6 +1438,38 @@ function visualizeSigmoid() {
         ctx.fillStyle = '#333';
         ctx.fillText('Predict "Not Survived" (σ(z) < 0.5)', 100, zeroY + 60);
         ctx.fillText('Predict "Survived" (σ(z) > 0.5)', zeroX + 30, zeroY + 60);
+        
+        // Draw grid lines
+        ctx.strokeStyle = '#eee';
+        ctx.lineWidth = 0.5;
+        
+        // Vertical grid lines
+        for (let x = -5; x <= 5; x += 1) {
+            const canvasX = centerX + x * 40;
+            ctx.beginPath();
+            ctx.moveTo(canvasX, 20);
+            ctx.lineTo(canvasX, height - 20);
+            ctx.stroke();
+            
+            // Tick labels
+            ctx.fillStyle = '#666';
+            ctx.font = '10px Arial';
+            ctx.fillText(x, canvasX - 3, height - 10);
+        }
+        
+        // Horizontal grid lines
+        for (let y = 0; y <= 1; y += 0.2) {
+            const canvasY = centerY - y * 100;
+            ctx.beginPath();
+            ctx.moveTo(50, canvasY);
+            ctx.lineTo(width - 50, canvasY);
+            ctx.stroke();
+            
+            // Tick labels
+            ctx.fillStyle = '#666';
+            ctx.font = '10px Arial';
+            ctx.fillText(y.toFixed(1), 35, canvasY + 3);
+        }
     }, 100);
 }
 
@@ -1191,6 +1482,7 @@ async function analyzeFeatureImportance() {
     
     const statusDiv = document.getElementById('importance-status');
     statusDiv.innerHTML = '<div class="processing">Analyzing feature importance...<br>This may take a minute.</div>';
+    updateStatusIndicator('importance-btn', 'processing');
     
     try {
         // Get feature names
@@ -1345,9 +1637,12 @@ async function analyzeFeatureImportance() {
                 </ul>
             </div>
         `;
+        
+        updateStatusIndicator('importance-btn', 'ready');
     } catch (error) {
         statusDiv.innerHTML = `<div class="error-message">Error analyzing feature importance: ${error.message}</div>`;
         console.error('Feature importance error:', error);
+        updateStatusIndicator('importance-btn', 'not-ready');
     }
 }
 
