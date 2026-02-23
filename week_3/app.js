@@ -1,3 +1,4 @@
+```javascript
 /**
  * Neural Network Design: The Gradient Puzzle
  *
@@ -38,6 +39,7 @@ function mse(yTrue, yPred) {
 }
 
 // Sorted MSE: compares the sorted pixel values (preserves histogram)
+// Uses a custom gradient to allow backpropagation through the sorting operation.
 function sortedMSE(yTrue, yPred) {
   // Flatten to 1D
   const flatTrue = yTrue.reshape([-1]);
@@ -45,11 +47,48 @@ function sortedMSE(yTrue, yPred) {
   const k = flatTrue.shape[0]; // should be 256
 
   // Sort both tensors in descending order (topk returns sorted descending)
-  const sortedTrue = tf.topk(flatTrue, k).values;
-  const sortedPred = tf.topk(flatPred, k).values;
+  const { values: sortedTrue, indices: indicesTrue } = tf.topk(flatTrue, k);
+  const { values: sortedPred, indices: indicesPred } = tf.topk(flatPred, k);
 
-  // MSE between sorted values
-  return tf.losses.meanSquaredError(sortedTrue, sortedPred);
+  // Compute MSE between the sorted sequences
+  const loss = tf.losses.meanSquaredError(sortedTrue, sortedPred);
+
+  // Custom gradient: we need to propagate gradients through the sorting.
+  // The gradient of the loss w.r.t. flatPred is obtained by taking the gradient
+  // w.r.t. sortedPred and then scattering it back using the original indices.
+  const grad = (dy) => {
+    // dy is the gradient of the final loss w.r.t. this loss (usually 1)
+    // gradient of MSE w.r.t. sortedPred = 2*(sortedPred - sortedTrue)/k
+    const gradSorted = tf.mul(2.0 / k, tf.sub(sortedPred, sortedTrue));
+
+    // Scatter the gradients back to the original order using indicesPred
+    const indices = indicesPred.reshape([k, 1]);
+    const updates = gradSorted.reshape([k]);
+    const shape = [k];
+    const gradFlat = tf.scatterND(indices, updates, shape);
+    const gradYPred = gradFlat.reshape(yPred.shape);
+
+    // Clean up intermediate tensors created in the gradient pass
+    gradSorted.dispose();
+    indices.dispose();
+    updates.dispose();
+    gradFlat.dispose();
+
+    // No gradient for yTrue (input is constant)
+    return [null, gradYPred];
+  };
+
+  // Return a tensor with the custom gradient attached
+  const lossWithGrad = tf.customGrad({
+    f: () => loss,
+    grad: grad,
+  });
+
+  // Dispose intermediate tensors from the forward pass that are no longer needed
+  flatTrue.dispose();
+  indicesTrue.dispose();
+
+  return lossWithGrad;
 }
 
 // Smoothness (Total Variation) - penalizes differences between adjacent pixels
@@ -357,3 +396,4 @@ function loop() {
 
 // Start
 init();
+```
