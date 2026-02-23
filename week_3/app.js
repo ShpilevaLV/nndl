@@ -41,15 +41,15 @@ function mse(yTrue, yPred) {
  */
 function smoothness(yPred) {
   // yPred shape: [1, 16, 16, 1]
-  // Differences in x direction (between columns)
-  const left = yPred.slice([0, 0, 0, 0], [-1, -1, 15, -1]);
-  const right = yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]);
-  const diffX = left.sub(right);
+  // Compute differences in x direction (between columns)
+  const left = yPred.slice([0, 0, 0, 0], [1, 16, 15, 1]);     // first 15 columns
+  const right = yPred.slice([0, 0, 1, 0], [1, 16, 15, 1]);    // last 15 columns
+  const diffX = tf.sub(left, right);
 
   // Differences in y direction (between rows)
-  const top = yPred.slice([0, 0, 0, 0], [-1, 15, -1, -1]);
-  const bottom = yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]);
-  const diffY = top.sub(bottom);
+  const top = yPred.slice([0, 0, 0, 0], [1, 15, 16, 1]);      // first 15 rows
+  const bottom = yPred.slice([0, 1, 0, 0], [1, 15, 16, 1]);   // last 15 rows
+  const diffY = tf.sub(top, bottom);
 
   // Return mean of squared differences
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
