@@ -2,13 +2,9 @@
  * Neural Network Design: The Gradient Puzzle
  *
  * Objective:
- * Modify the Student Model architecture and loss function to transform
- * random noise input into a smooth, directional gradient output.
- *
- * Levels:
- * 1. The Trap of Standard Reconstruction (MSE) – commented out.
- * 2. (Optional) Sorted MSE – not implemented due to gradient issues.
- * 3. Shaping the Geometry (Smoothness & Direction) – implemented.
+ * Transform random noise into a smooth directional gradient.
+ * Student model uses a custom loss: MSE + Smoothness + Direction.
+ * Architectures: Compression, Transformation, Expansion.
  */
 
 // ==========================================
@@ -40,28 +36,35 @@ function mse(yTrue, yPred) {
 }
 
 /**
- * Smoothness (Total Variation) Loss
+ * Smoothness (Total Variation) Loss.
  * Penalizes large differences between neighboring pixels.
  */
 function smoothness(yPred) {
-  const diffX = yPred
-    .slice([0, 0, 0, 0], [-1, -1, 15, -1])
-    .sub(yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]));
+  // yPred shape: [1, 16, 16, 1]
+  // Differences in x direction (between columns)
+  const left = yPred.slice([0, 0, 0, 0], [-1, -1, 15, -1]);
+  const right = yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]);
+  const diffX = left.sub(right);
 
-  const diffY = yPred
-    .slice([0, 0, 0, 0], [-1, 15, -1, -1])
-    .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
+  // Differences in y direction (between rows)
+  const top = yPred.slice([0, 0, 0, 0], [-1, 15, -1, -1]);
+  const bottom = yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]);
+  const diffY = top.sub(bottom);
 
+  // Return mean of squared differences
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
 /**
- * Directionality (Gradient) Loss
- * Encourages pixels on the right to be brighter than pixels on the left.
+ * Directionality (Gradient) Loss.
+ * Encourages pixels on the right to be brighter than those on the left.
  */
 function directionX(yPred) {
   const width = 16;
+  // Mask: linear increase from -1 (left) to +1 (right)
   const mask = tf.linspace(-1, 1, width).reshape([1, 1, width, 1]);
+  // We want yPred to be positively correlated with the mask.
+  // Minimizing -mean(yPred * mask) pushes bright pixels to the right.
   return tf.mean(yPred.mul(mask)).mul(-1);
 }
 
@@ -78,10 +81,10 @@ function createBaselineModel() {
   return model;
 }
 
-// ------------------------------------------------------------------
-// [STUDENT TODO-A]: STUDENT ARCHITECTURE DESIGN
-// Implement 'transformation' and 'expansion' architectures.
-// ------------------------------------------------------------------
+/**
+ * Creates the student model with the selected architecture.
+ * @param {string} archType - 'compression', 'transformation', or 'expansion'
+ */
 function createStudentModel(archType) {
   const model = tf.sequential();
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
@@ -95,7 +98,7 @@ function createStudentModel(archType) {
     model.add(tf.layers.dense({ units: 256, activation: 'relu' }));
     model.add(tf.layers.dense({ units: 256, activation: 'sigmoid' }));
   } else if (archType === 'expansion') {
-    // Expansion: overcomplete representation (512 units)
+    // Expansion: overcomplete representation (512)
     model.add(tf.layers.dense({ units: 512, activation: 'relu' }));
     model.add(tf.layers.dense({ units: 256, activation: 'sigmoid' }));
   } else {
@@ -110,25 +113,23 @@ function createStudentModel(archType) {
 // 4. Custom Loss Function (The Heart of the Puzzle)
 // ==========================================
 
-// ------------------------------------------------------------------
-// [STUDENT TODO-B]: STUDENT LOSS DESIGN
-// Combine MSE, Smoothness, and Direction.
-// Tune the lambda coefficients to achieve a clean gradient.
-// Note: Sorted MSE is omitted because it causes gradient issues.
-// ------------------------------------------------------------------
+/**
+ * Student loss: combination of MSE, smoothness, and direction.
+ * Adjust the lambdas to achieve a clean gradient.
+ */
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
-    // Standard MSE (reconstruction) – keep it to avoid collapse
+    // Standard MSE – keeps the output from collapsing
     const lossMSE = mse(yTrue, yPred);
 
-    // Smoothness and Direction – now with significant weights
-    const lambdaSmooth = 0.5;   // try values 0.1, 0.5, 1.0
-    const lambdaDir = 0.3;       // try 0.1, 0.3, 0.5
-
+    // Smoothness – encourages local consistency
+    const lambdaSmooth = 0.8;   // try 0.5–1.0
     const lossSmooth = smoothness(yPred).mul(lambdaSmooth);
+
+    // Direction – encourages bright‑right gradient
+    const lambdaDir = 0.5;       // try 0.3–0.7
     const lossDir = directionX(yPred).mul(lambdaDir);
 
-    // Total loss
     return lossMSE.add(lossSmooth).add(lossDir);
   });
 }
@@ -222,6 +223,7 @@ function resetModels(archType = null) {
     archType = checked ? checked.value : 'compression';
   }
 
+  // Dispose old resources
   if (state.baselineModel) {
     state.baselineModel.dispose();
     state.baselineModel = null;
@@ -235,6 +237,7 @@ function resetModels(archType = null) {
     state.optimizer = null;
   }
 
+  // Create new models
   state.baselineModel = createBaselineModel();
   try {
     state.studentModel = createStudentModel(archType);
