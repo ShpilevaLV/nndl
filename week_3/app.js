@@ -6,9 +6,9 @@
  * random noise input into a smooth, directional gradient output.
  *
  * Levels:
- * 1. The Trap of Standard Reconstruction (MSE) – currently commented out.
- * 2. The "Distribution" Constraint (Sorted MSE) – implemented.
- * 3. Shaping the Geometry (Smoothness & Direction) – implemented with tunable weights.
+ * 1. The Trap of Standard Reconstruction (MSE) – commented out.
+ * 2. (Optional) Sorted MSE – not implemented due to gradient issues.
+ * 3. Shaping the Geometry (Smoothness & Direction) – implemented.
  */
 
 // ==========================================
@@ -44,12 +44,10 @@ function mse(yTrue, yPred) {
  * Penalizes large differences between neighboring pixels.
  */
 function smoothness(yPred) {
-  // Difference in X direction: pixel[i, j] - pixel[i, j+1]
   const diffX = yPred
     .slice([0, 0, 0, 0], [-1, -1, 15, -1])
     .sub(yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]));
 
-  // Difference in Y direction: pixel[i, j] - pixel[i+1, j]
   const diffY = yPred
     .slice([0, 0, 0, 0], [-1, 15, -1, -1])
     .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
@@ -63,10 +61,7 @@ function smoothness(yPred) {
  */
 function directionX(yPred) {
   const width = 16;
-  // Mask increases linearly from -1 (left) to +1 (right)
   const mask = tf.linspace(-1, 1, width).reshape([1, 1, width, 1]);
-  // We want yPred to be positively correlated with the mask.
-  // Minimizing -mean(yPred * mask) pushes bright values to the right.
   return tf.mean(yPred.mul(mask)).mul(-1);
 }
 
@@ -96,13 +91,11 @@ function createStudentModel(archType) {
     model.add(tf.layers.dense({ units: 64, activation: 'relu' }));
     model.add(tf.layers.dense({ units: 256, activation: 'sigmoid' }));
   } else if (archType === 'transformation') {
-    // [IMPLEMENTED] Transformation: same dimension as input (256)
-    // This acts like a rotation or a 1x1 mapping.
+    // Transformation: same dimension as input (256)
     model.add(tf.layers.dense({ units: 256, activation: 'relu' }));
     model.add(tf.layers.dense({ units: 256, activation: 'sigmoid' }));
   } else if (archType === 'expansion') {
-    // [IMPLEMENTED] Expansion: overcomplete representation
-    // Increases dimension to capture more complex features.
+    // Expansion: overcomplete representation (512 units)
     model.add(tf.layers.dense({ units: 512, activation: 'relu' }));
     model.add(tf.layers.dense({ units: 256, activation: 'sigmoid' }));
   } else {
@@ -119,30 +112,24 @@ function createStudentModel(archType) {
 
 // ------------------------------------------------------------------
 // [STUDENT TODO-B]: STUDENT LOSS DESIGN
-// Combine Sorted MSE, Smoothness, and Direction.
+// Combine MSE, Smoothness, and Direction.
 // Tune the lambda coefficients to achieve a clean gradient.
+// Note: Sorted MSE is omitted because it causes gradient issues.
 // ------------------------------------------------------------------
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
-    // --- Level 2: "Distribution" Constraint (Sorted MSE) ---
-    // Flatten, sort, and reshape back to original shape.
-    const yTrueSorted = tf.topk(tf.reshape(yTrue, [-1]), 256).values.reshape(yTrue.shape);
-    const yPredSorted = tf.topk(tf.reshape(yPred, [-1]), 256).values.reshape(yPred.shape);
-    const lossSortedMSE = mse(yTrueSorted, yPredSorted);
+    // Standard MSE (reconstruction) – keep it to avoid collapse
+    const lossMSE = mse(yTrue, yPred);
 
-    // --- Level 3: Shaping the Geometry ---
-    // Experiment with these weights!
-    const lambdaSmooth = 0.1;   // Weight for smoothness (start small)
-    const lambdaDir = 0.05;      // Weight for direction (start small)
+    // Smoothness and Direction – now with significant weights
+    const lambdaSmooth = 0.5;   // try values 0.1, 0.5, 1.0
+    const lambdaDir = 0.3;       // try 0.1, 0.3, 0.5
 
     const lossSmooth = smoothness(yPred).mul(lambdaSmooth);
     const lossDir = directionX(yPred).mul(lambdaDir);
 
     // Total loss
-    return lossSortedMSE.add(lossSmooth).add(lossDir);
-
-    // --- Level 1 (The Trap) - kept for reference ---
-    // return mse(yTrue, yPred); // This would just copy the input.
+    return lossMSE.add(lossSmooth).add(lossDir);
   });
 }
 
@@ -201,16 +188,11 @@ async function trainStep() {
 // ==========================================
 
 function init() {
-  // 1. Generate fixed noise
   state.xInput = tf.randomUniform(CONFIG.inputShapeData);
-
-  // 2. Initialize Models
   resetModels();
 
-  // 3. Render Input
   tf.browser.toPixels(state.xInput.squeeze(), document.getElementById('canvas-input'));
 
-  // 4. Bind Events
   document.getElementById('btn-train').addEventListener('click', () => trainStep());
   document.getElementById('btn-auto').addEventListener('click', toggleAutoTrain);
   document.getElementById('btn-reset').addEventListener('click', resetModels);
@@ -227,7 +209,6 @@ function init() {
 }
 
 function resetModels(archType = null) {
-  // Ensure archType is a string, not an event object
   if (typeof archType !== 'string') {
     archType = null;
   }
@@ -241,7 +222,6 @@ function resetModels(archType = null) {
     archType = checked ? checked.value : 'compression';
   }
 
-  // Dispose old resources
   if (state.baselineModel) {
     state.baselineModel.dispose();
     state.baselineModel = null;
@@ -255,7 +235,6 @@ function resetModels(archType = null) {
     state.optimizer = null;
   }
 
-  // Create new models
   state.baselineModel = createBaselineModel();
   try {
     state.studentModel = createStudentModel(archType);
@@ -323,5 +302,5 @@ function loop() {
   }
 }
 
-// Start everything
+// Start
 init();
