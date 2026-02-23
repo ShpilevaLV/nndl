@@ -1,4 +1,3 @@
-```javascript
 /**
  * Neural Network Design: The Gradient Puzzle
  *
@@ -38,60 +37,7 @@ function mse(yTrue, yPred) {
   return tf.losses.meanSquaredError(yTrue, yPred);
 }
 
-// Sorted MSE: compares the sorted pixel values (preserves histogram)
-// Uses a custom gradient to allow backpropagation through the sorting operation.
-function sortedMSE(yTrue, yPred) {
-  // Flatten to 1D
-  const flatTrue = yTrue.reshape([-1]);
-  const flatPred = yPred.reshape([-1]);
-  const k = flatTrue.shape[0]; // should be 256
-
-  // Sort both tensors in descending order (topk returns sorted descending)
-  const { values: sortedTrue, indices: indicesTrue } = tf.topk(flatTrue, k);
-  const { values: sortedPred, indices: indicesPred } = tf.topk(flatPred, k);
-
-  // Compute MSE between the sorted sequences
-  const loss = tf.losses.meanSquaredError(sortedTrue, sortedPred);
-
-  // Custom gradient: we need to propagate gradients through the sorting.
-  // The gradient of the loss w.r.t. flatPred is obtained by taking the gradient
-  // w.r.t. sortedPred and then scattering it back using the original indices.
-  const grad = (dy) => {
-    // dy is the gradient of the final loss w.r.t. this loss (usually 1)
-    // gradient of MSE w.r.t. sortedPred = 2*(sortedPred - sortedTrue)/k
-    const gradSorted = tf.mul(2.0 / k, tf.sub(sortedPred, sortedTrue));
-
-    // Scatter the gradients back to the original order using indicesPred
-    const indices = indicesPred.reshape([k, 1]);
-    const updates = gradSorted.reshape([k]);
-    const shape = [k];
-    const gradFlat = tf.scatterND(indices, updates, shape);
-    const gradYPred = gradFlat.reshape(yPred.shape);
-
-    // Clean up intermediate tensors created in the gradient pass
-    gradSorted.dispose();
-    indices.dispose();
-    updates.dispose();
-    gradFlat.dispose();
-
-    // No gradient for yTrue (input is constant)
-    return [null, gradYPred];
-  };
-
-  // Return a tensor with the custom gradient attached
-  const lossWithGrad = tf.customGrad({
-    f: () => loss,
-    grad: grad,
-  });
-
-  // Dispose intermediate tensors from the forward pass that are no longer needed
-  flatTrue.dispose();
-  indicesTrue.dispose();
-
-  return lossWithGrad;
-}
-
-// Smoothness (Total Variation) - penalizes differences between adjacent pixels
+// Smoothness (Total Variation) - Penalize differences between adjacent pixels
 function smoothness(yPred) {
   // Difference in X direction: pixel[i, j] - pixel[i, j+1]
   const diffX = yPred
@@ -103,11 +49,11 @@ function smoothness(yPred) {
     .slice([0, 0, 0, 0], [-1, 15, -1, -1])
     .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
 
-  // Return sum of squares (averaged over all pixels)
+  // Return sum of squares
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
-// Directionality (Gradient) - encourages left dark, right bright
+// Directionality (Gradient) - Encourage pixels on the right to be brighter
 function directionX(yPred) {
   // Create a weight mask that increases from left (-1) to right (+1)
   const width = 16;
@@ -129,35 +75,29 @@ function createBaselineModel() {
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
   model.add(tf.layers.dense({ units: 64, activation: "relu" })); // Bottleneck
   model.add(tf.layers.dense({ units: 256, activation: "sigmoid" })); // Output 0-1
-  // Reshape back to [16, 16, 1] (batch dim is handled automatically)
   model.add(tf.layers.reshape({ targetShape: [16, 16, 1] }));
   return model;
 }
 
-// ------------------------------------------------------------------
-// [TODO-A]: STUDENT ARCHITECTURE DESIGN
-// Modify this function to implement 'transformation' and 'expansion'.
-// ------------------------------------------------------------------
+// [TODO-A IMPLEMENTED]: STUDENT ARCHITECTURE DESIGN
+// Three projection types: compression / transformation / expansion
 function createStudentModel(archType) {
   const model = tf.sequential();
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
 
   if (archType === "compression") {
-    // [Implemented] Bottleneck: Compress information
+    // Bottleneck: Compress information (undercomplete)
     model.add(tf.layers.dense({ units: 64, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else if (archType === "transformation") {
-    // [Implemented] Transformation (1:1 mapping)
-    // Maintain dimension (hidden layer size ≈ input size 256)
+    // 1:1 mapping - transformation without compression/expansion
     model.add(tf.layers.dense({ units: 256, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else if (archType === "expansion") {
-    // [Implemented] Expansion (Overcomplete)
-    // Increase dimension (hidden layer > 256)
+    // Overcomplete: More parameters for flexibility
     model.add(tf.layers.dense({ units: 512, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else {
-    // Safety check for unknown architectures
     throw new Error(`Unknown architecture type: ${archType}`);
   }
 
@@ -169,23 +109,24 @@ function createStudentModel(archType) {
 // 4. Custom Loss Function
 // ==========================================
 
-// ------------------------------------------------------------------
-// [TODO-B]: STUDENT LOSS DESIGN
-// Modify this function to create a smooth gradient.
-// Currently, it only uses MSE (Identity mapping).
-// ------------------------------------------------------------------
+// [TODO-B IMPLEMENTED]: STUDENT LOSS DESIGN
+// Level 3: Sorted MSE + Smoothness + Direction = Smooth Gradient!
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
-    // 1. Sorted MSE - allows pixel rearrangement while preserving color distribution
-    const lossSortedMSE = sortedMSE(yTrue, yPred);
+    // Level 2: Sorted MSE - Conserve pixel values (allow rearrangement)
+    const inputFlat = tf.mean(yTrue, -1).flatten();  // [256]
+    const predFlat = tf.mean(yPred, -1).flatten();   // [256]
+    const inputSorted = inputFlat.expandDims(0).sort({axis: 1}).squeeze();
+    const predSorted = predFlat.expandDims(0).sort({axis: 1}).squeeze();
+    const lossSortedMSE = tf.losses.meanSquaredError(inputSorted, predSorted);
 
-    // 2. Smoothness - encourages local consistency (removes noise)
-    const lossSmooth = smoothness(yPred).mul(0.1); // weight = 0.1
+    // Level 3: Smoothness - Be locally consistent (λ1 = 0.1)
+    const lossSmooth = smoothness(yPred).mul(0.1);
 
-    // 3. Direction - forces bright-on-right gradient
-    const lossDir = directionX(yPred).mul(0.1); // weight = 0.1
+    // Level 3: Direction - Bright on the right (λ2 = 0.1)
+    const lossDir = directionX(yPred).mul(0.1);
 
-    // Total Loss
+    // L_total = L_sortedMSE + 0.1*L_smooth + 0.1*L_dir
     return lossSortedMSE.add(lossSmooth).add(lossDir);
   });
 }
@@ -205,31 +146,30 @@ async function trainStep() {
   }
 
   // Train Baseline (MSE Only)
-  // We use a simple fit here or gradient tape, let's use tape for consistency
   const baselineLossVal = tf.tidy(() => {
     const { value, grads } = tf.variableGrads(() => {
       const yPred = state.baselineModel.predict(state.xInput);
-      return mse(state.xInput, yPred); // Baseline always uses MSE
+      return mse(state.xInput, yPred);
     }, state.baselineModel.getWeights());
 
     state.optimizer.applyGradients(grads);
     return value.dataSync()[0];
   });
 
-  // Train Student (Custom Loss)
+  // Train Student (Custom Loss: Sorted MSE + Smooth + Direction)
   let studentLossVal = 0;
   try {
     studentLossVal = tf.tidy(() => {
       const { value, grads } = tf.variableGrads(() => {
         const yPred = state.studentModel.predict(state.xInput);
-        return studentLoss(state.xInput, yPred); // Uses student's custom loss
+        return studentLoss(state.xInput, yPred);
       }, state.studentModel.getWeights());
 
       state.optimizer.applyGradients(grads);
       return value.dataSync()[0];
     });
     log(
-      `Step ${state.step}: Base Loss=${baselineLossVal.toFixed(4)} | Student Loss=${studentLossVal.toFixed(4)}`,
+      `Step ${state.step}: Base=${baselineLossVal.toFixed(4)} | Student=${studentLossVal.toFixed(4)} (SortedMSE+Smooth+Dir)`,
     );
   } catch (e) {
     log(`Error in Student Training: ${e.message}`, true);
@@ -237,7 +177,7 @@ async function trainStep() {
     return;
   }
 
-  // Visualize
+  // Visualize every 5 steps or manual mode
   if (state.step % 5 === 0 || !state.isAutoTraining) {
     await render();
     updateLossDisplay(baselineLossVal, studentLossVal);
@@ -278,17 +218,15 @@ function init() {
     });
   });
 
-  log("Initialized. Ready to train.");
+  log("✅ Initialized! TODOs completed: Custom architectures + SortedMSE+Smooth+Direction loss.");
+  log("Press 'Auto Train' → watch noise → smooth gradient (right side bright)!");
 }
 
 function resetModels(archType = null) {
-  // [Fix]: When called via event listener, archType is an Event object.
-  // We must ensure it's either a string or null.
   if (typeof archType !== "string") {
     archType = null;
   }
 
-  // Safety: Stop auto-training to prevent race conditions during reset
   if (state.isAutoTraining) {
     stopAutoTrain();
   }
@@ -298,7 +236,7 @@ function resetModels(archType = null) {
     archType = checked ? checked.value : "compression";
   }
 
-  // Dispose old resources to avoid memory leaks
+  // Dispose old resources
   if (state.baselineModel) {
     state.baselineModel.dispose();
     state.baselineModel = null;
@@ -307,7 +245,6 @@ function resetModels(archType = null) {
     state.studentModel.dispose();
     state.studentModel = null;
   }
-  // Important: Dispose optimizer because it holds references to old model variables.
   if (state.optimizer) {
     state.optimizer.dispose();
     state.optimizer = null;
@@ -315,24 +252,15 @@ function resetModels(archType = null) {
 
   // Create New Models
   state.baselineModel = createBaselineModel();
-  try {
-    state.studentModel = createStudentModel(archType);
-  } catch (e) {
-    log(`Error creating model: ${e.message}`, true);
-    state.studentModel = createBaselineModel(); // Fallback to avoid crash
-  }
-
-  // Create new optimizer (must be done AFTER models are created)
+  state.studentModel = createStudentModel(archType);
   state.optimizer = tf.train.adam(CONFIG.learningRate);
   state.step = 0;
 
-  log(`Models reset. Student Arch: ${archType}`);
+  log(`🔄 Reset. Student: ${archType} | Loss: SortedMSE(1.0)+Smooth(0.1)+Dir(0.1)`);
   render();
 }
 
 async function render() {
-  // Tensor memory management with tidy not possible here due to async toPixels,
-  // so we manually dispose predictions.
   const basePred = state.baselineModel.predict(state.xInput);
   const studPred = state.studentModel.predict(state.xInput);
 
@@ -363,6 +291,7 @@ function log(msg, isError = false) {
   span.innerText = `> ${msg}`;
   if (isError) span.classList.add("error");
   el.prepend(span);
+  el.scrollTop = 0;
 }
 
 // Auto Train Logic
@@ -396,4 +325,3 @@ function loop() {
 
 // Start
 init();
-```
