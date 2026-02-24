@@ -1,19 +1,14 @@
 /**
  * Neural Network Design: The Gradient Puzzle
  *
- * FINAL STABLE VERSION
- * - Proper optimizer usage (no variableGrads)
- * - Sorted MSE (histogram preservation)
- * - Smoothness (Total Variation)
- * - Direction constraint (Left dark → Right bright)
+ * FULLY STABLE VERSION
  */
 
 // ==========================================
-// 1. Global State & Config
+// 1. Global Config
 // ==========================================
 const CONFIG = {
-  inputShapeModel: [16, 16, 1],
-  inputShapeData: [1, 16, 16, 1],
+  inputShape: [1, 16, 16, 1],
   learningRate: 0.01,
   autoTrainSpeed: 50,
 };
@@ -24,269 +19,205 @@ let state = {
   xInput: null,
   baselineModel: null,
   studentModel: null,
-  baselineOptimizer: null,
-  studentOptimizer: null,
+  baselineOpt: null,
+  studentOpt: null,
 };
 
 // ==========================================
-// 2. Helper Functions (Loss Components)
+// 2. Basic Losses
 // ==========================================
 
-// Standard pixel-wise MSE
-function mse(yTrue, yPred) {
-  return tf.losses.meanSquaredError(yTrue, yPred);
+function mse(a, b) {
+  return tf.losses.meanSquaredError(a, b);
 }
 
-// Smoothness (Total Variation loss)
-// Penalizes differences between adjacent pixels
-function smoothness(yPred) {
-  const diffX = yPred
-    .slice([0, 0, 0, 0], [-1, -1, 15, -1])
-    .sub(yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]));
+// Smoothness (Total Variation)
+function smoothness(img) {
+  const dx = img.slice([0,0,0,0], [-1,-1,15,-1])
+    .sub(img.slice([0,0,1,0], [-1,-1,15,-1]));
 
-  const diffY = yPred
-    .slice([0, 0, 0, 0], [-1, 15, -1, -1])
-    .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
+  const dy = img.slice([0,0,0,0], [-1,15,-1,-1])
+    .sub(img.slice([0,1,0,0], [-1,15,-1,-1]));
 
-  return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
+  return tf.mean(tf.square(dx)).add(tf.mean(tf.square(dy)));
 }
 
-// Horizontal direction constraint
-// Encourages left side dark and right side bright
-function directionX(yPred) {
-  const width = 16;
-  const mask = tf.linspace(-1, 1, width).reshape([1, 1, width, 1]);
-  return tf.mean(yPred.mul(mask)).mul(-1);
+// Direction constraint
+function directionX(img) {
+  const mask = tf.linspace(-1,1,16).reshape([1,1,16,1]);
+  return tf.mean(img.mul(mask)).mul(-1);
+}
+
+// Histogram matching using sort
+function sortedMSE(a, b) {
+  const flatA = a.flatten();
+  const flatB = b.flatten();
+
+  const sortA = tf.sort(flatA);
+  const sortB = tf.sort(flatB);
+
+  return mse(sortA, sortB);
 }
 
 // ==========================================
-// 3. Model Architectures
+// 3. Models
 // ==========================================
 
-// Baseline: Undercomplete autoencoder
-function createBaselineModel() {
-  const model = tf.sequential();
-  model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
-  model.add(tf.layers.dense({ units: 64, activation: "relu" }));
-  model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
-  model.add(tf.layers.reshape({ targetShape: [16, 16, 1] }));
-  return model;
+function createBaseline() {
+  const m = tf.sequential();
+  m.add(tf.layers.flatten({inputShape:[16,16,1]}));
+  m.add(tf.layers.dense({units:64, activation:"relu"}));
+  m.add(tf.layers.dense({units:256, activation:"sigmoid"}));
+  m.add(tf.layers.reshape({targetShape:[16,16,1]}));
+  return m;
 }
 
-// Student model with selectable projection type
-function createStudentModel(archType) {
-  const model = tf.sequential();
-  model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
+function createStudent(type) {
+  const m = tf.sequential();
+  m.add(tf.layers.flatten({inputShape:[16,16,1]}));
 
-  if (archType === "compression") {
-    model.add(tf.layers.dense({ units: 64, activation: "relu" }));
-    model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
-
-  } else if (archType === "transformation") {
-    model.add(tf.layers.dense({ units: 256, activation: "relu" }));
-    model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
-
-  } else if (archType === "expansion") {
-    model.add(tf.layers.dense({ units: 512, activation: "relu" }));
-    model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
-
-  } else {
-    throw new Error(`Unknown architecture type: ${archType}`);
+  if (type === "compression") {
+    m.add(tf.layers.dense({units:64, activation:"relu"}));
+  }
+  else if (type === "transformation") {
+    m.add(tf.layers.dense({units:256, activation:"relu"}));
+  }
+  else if (type === "expansion") {
+    m.add(tf.layers.dense({units:512, activation:"relu"}));
   }
 
-  model.add(tf.layers.reshape({ targetShape: [16, 16, 1] }));
-  return model;
+  m.add(tf.layers.dense({units:256, activation:"sigmoid"}));
+  m.add(tf.layers.reshape({targetShape:[16,16,1]}));
+
+  return m;
 }
 
 // ==========================================
-// 4. Custom Student Loss
+// 4. Student Custom Loss
 // ==========================================
 
-function studentLoss(yTrue, yPred) {
-  return tf.tidy(() => {
+function studentLoss(input, output) {
 
-    // ----- Sorted MSE (Histogram Preservation) -----
+  const lSorted = sortedMSE(input, output);
+  const lSmooth = smoothness(output).mul(0.1);
+  const lDir = directionX(output).mul(0.2);
 
-    const flatTrue = yTrue.reshape([256]);
-    const flatPred = yPred.reshape([256]);
-
-    const sortedTrue = tf.sort(flatTrue);
-    const sortedPred = tf.sort(flatPred);
-
-    const lossSorted = mse(sortedTrue, sortedPred);
-
-    // ----- Smoothness -----
-    const lossSmooth = smoothness(yPred).mul(0.1);
-
-    // ----- Direction -----
-    const lossDir = directionX(yPred).mul(0.2);
-
-    return lossSorted
-      .add(lossSmooth)
-      .add(lossDir);
-  });
+  return lSorted.add(lSmooth).add(lDir);
 }
 
 // ==========================================
-// 5. Training Step
+// 5. Training
 // ==========================================
 
 async function trainStep() {
+
   state.step++;
 
-  // ---- Baseline Training ----
-  const baselineLossTensor = state.baselineOptimizer.minimize(() => {
-    return tf.tidy(() => {
-      const yPred = state.baselineModel.predict(state.xInput);
-      return mse(state.xInput, yPred);
-    });
-  }, true, state.baselineModel.trainableVariables);
+  // Baseline update
+  const baseLoss = state.baselineOpt.minimize(() => {
+    const pred = state.baselineModel.predict(state.xInput);
+    return mse(state.xInput, pred);
+  }, true);
 
-  const baselineLoss = baselineLossTensor.dataSync()[0];
-  baselineLossTensor.dispose();
+  const baseVal = baseLoss.dataSync()[0];
+  baseLoss.dispose();
 
-  // ---- Student Training ----
-  const studentLossTensor = state.studentOptimizer.minimize(() => {
-    return tf.tidy(() => {
-      const yPred = state.studentModel.predict(state.xInput);
-      return studentLoss(state.xInput, yPred);
-    });
-  }, true, state.studentModel.trainableVariables);
+  // Student update
+  const studLoss = state.studentOpt.minimize(() => {
+    const pred = state.studentModel.predict(state.xInput);
+    return studentLoss(state.xInput, pred);
+  }, true);
 
-  const studentLossValue = studentLossTensor.dataSync()[0];
-  studentLossTensor.dispose();
+  const studVal = studLoss.dataSync()[0];
+  studLoss.dispose();
 
-  log(
-    `Step ${state.step}: Base=${baselineLoss.toFixed(4)} | Student=${studentLossValue.toFixed(4)}`
-  );
+  console.log("Step", state.step, baseVal, studVal);
 
-  if (state.step % 5 === 0 || !state.isAutoTraining) {
+  if (state.step % 5 === 0) {
     await render();
-    updateLossDisplay(baselineLoss, studentLossValue);
   }
+
+  document.getElementById("loss-baseline").innerText =
+    `Loss: ${baseVal.toFixed(4)}`;
+
+  document.getElementById("loss-student").innerText =
+    `Loss: ${studVal.toFixed(4)}`;
 }
 
 // ==========================================
-// 6. UI & Initialization
+// 6. Rendering
 // ==========================================
 
-function init() {
-  state.xInput = tf.randomUniform(CONFIG.inputShapeData);
+async function render() {
+  const base = state.baselineModel.predict(state.xInput);
+  const stud = state.studentModel.predict(state.xInput);
 
-  resetModels();
+  await tf.browser.toPixels(base.squeeze(),
+    document.getElementById("canvas-baseline"));
 
-  tf.browser.toPixels(
-    state.xInput.squeeze(),
-    document.getElementById("canvas-input"),
-  );
+  await tf.browser.toPixels(stud.squeeze(),
+    document.getElementById("canvas-student"));
 
-  document
-    .getElementById("btn-train")
-    .addEventListener("click", () => trainStep());
-
-  document
-    .getElementById("btn-auto")
-    .addEventListener("click", toggleAutoTrain);
-
-  document
-    .getElementById("btn-reset")
-    .addEventListener("click", resetModels);
-
-  document.querySelectorAll('input[name="arch"]').forEach((radio) => {
-    radio.addEventListener("change", (e) => {
-      resetModels(e.target.value);
-      document.getElementById("student-arch-label").innerText =
-        e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1);
-    });
-  });
-
-  log("Initialized. Ready to train.");
+  base.dispose();
+  stud.dispose();
 }
 
-function resetModels(archType = null) {
-  if (typeof archType !== "string") {
+// ==========================================
+// 7. Init
+// ==========================================
+
+function resetModels(type=null) {
+
+  if (!type) {
     const checked = document.querySelector('input[name="arch"]:checked');
-    archType = checked ? checked.value : "compression";
+    type = checked ? checked.value : "compression";
   }
-
-  if (state.isAutoTraining) stopAutoTrain();
 
   if (state.baselineModel) state.baselineModel.dispose();
   if (state.studentModel) state.studentModel.dispose();
 
-  state.baselineModel = createBaselineModel();
-  state.studentModel = createStudentModel(archType);
+  state.baselineModel = createBaseline();
+  state.studentModel = createStudent(type);
 
-  state.baselineOptimizer = tf.train.adam(CONFIG.learningRate);
-  state.studentOptimizer = tf.train.adam(CONFIG.learningRate);
+  state.baselineOpt = tf.train.adam(CONFIG.learningRate);
+  state.studentOpt = tf.train.adam(CONFIG.learningRate);
 
   state.step = 0;
 
-  log(`Models reset. Student Arch: ${archType}`);
   render();
 }
 
-async function render() {
-  const basePred = state.baselineModel.predict(state.xInput);
-  const studPred = state.studentModel.predict(state.xInput);
+function init() {
 
-  await tf.browser.toPixels(
-    basePred.squeeze(),
-    document.getElementById("canvas-baseline"),
-  );
+  state.xInput = tf.randomUniform(CONFIG.inputShape);
 
-  await tf.browser.toPixels(
-    studPred.squeeze(),
-    document.getElementById("canvas-student"),
-  );
+  resetModels();
 
-  basePred.dispose();
-  studPred.dispose();
-}
+  tf.browser.toPixels(state.xInput.squeeze(),
+    document.getElementById("canvas-input"));
 
-function updateLossDisplay(base, stud) {
-  document.getElementById("loss-baseline").innerText =
-    `Loss: ${base.toFixed(5)}`;
-  document.getElementById("loss-student").innerText =
-    `Loss: ${stud.toFixed(5)}`;
-}
+  document.getElementById("btn-train")
+    .addEventListener("click", trainStep);
 
-function log(msg, isError = false) {
-  const el = document.getElementById("log-area");
-  const span = document.createElement("div");
-  span.innerText = `> ${msg}`;
-  if (isError) span.classList.add("error");
-  el.prepend(span);
-}
+  document.getElementById("btn-auto")
+    .addEventListener("click", () => {
+      state.isAutoTraining = !state.isAutoTraining;
+      loop();
+    });
 
-function toggleAutoTrain() {
-  const btn = document.getElementById("btn-auto");
+  document.getElementById("btn-reset")
+    .addEventListener("click", resetModels);
 
-  if (state.isAutoTraining) {
-    stopAutoTrain();
-  } else {
-    state.isAutoTraining = true;
-    btn.innerText = "Auto Train (Stop)";
-    btn.classList.add("btn-stop");
-    btn.classList.remove("btn-auto");
-    loop();
-  }
-}
-
-function stopAutoTrain() {
-  state.isAutoTraining = false;
-  const btn = document.getElementById("btn-auto");
-  btn.innerText = "Auto Train (Start)";
-  btn.classList.add("btn-auto");
-  btn.classList.remove("btn-stop");
+  document.querySelectorAll('input[name="arch"]')
+    .forEach(r =>
+      r.addEventListener("change", e => resetModels(e.target.value))
+    );
 }
 
 function loop() {
-  if (state.isAutoTraining) {
-    trainStep();
-    setTimeout(loop, CONFIG.autoTrainSpeed);
-  }
+  if (!state.isAutoTraining) return;
+  trainStep();
+  setTimeout(loop, CONFIG.autoTrainSpeed);
 }
 
-// Start app
 init();
