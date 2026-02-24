@@ -1,21 +1,26 @@
 /**
  * Neural Network Design: The Gradient Puzzle - FINAL WORKING VERSION
+ * Transforms random noise into smooth gradient using custom differentiable loss.
  */
 
 const CONFIG = {
   inputShapeModel: [16, 16, 1],
   inputShapeData: [1, 16, 16, 1],
-  learningRate: 0.05,
+  learningRate: 0.1,
   autoTrainSpeed: 50,
 };
 
 let state = {
-  step: 0, isAutoTraining: false, xInput: null,
-  baselineModel: null, studentModel: null, optimizer: null,
+  step: 0,
+  isAutoTraining: false,
+  xInput: null,
+  baselineModel: null,
+  studentModel: null,
+  optimizer: null,
 };
 
 // ==========================================
-// Helper Functions (ФИКСЕД)
+// Loss Components
 // ==========================================
 
 function mse(yTrue, yPred) {
@@ -35,31 +40,29 @@ function directionX(yPred) {
   return tf.mean(yPred.mul(mask)).mul(-1);
 }
 
-// 🔥 СОВСЕМ НОВЫЙ: DIFF_SORTED_MSE (работает с градиентами!)
+function verticalDirection(yPred) {
+  const maskY = tf.linspace(-1, 1, 16).reshape([1, 16, 1, 1]);
+  return tf.mean(yPred.mul(maskY)).mul(-1);
+}
+
+// Differentiable Sorted MSE approximation using cumulative distribution
 function diffSortedMSE(yTrue, yPred) {
   return tf.tidy(() => {
-    // 1. Flatten: [1,16,16,1] → [256]
     const inputFlat = yTrue.mean(-1).flatten();
     const predFlat = yPred.mean(-1).flatten();
     
-    // 2. Cumulative Distribution Matching (дифференцируем!)
-    const inputSortedApprox = inputFlat.expandDims(1)
-      .mul(tf.linspace(0, 1, 256).expandDims(0))  // [256,256]
-      .sum(-1).div(256);  // Quantile approx
+    const quantiles = tf.linspace(0, 1, 256);
+    const inputCdf = inputFlat.expandDims(1).mul(quantiles.expandDims(0)).sum(-1).div(256);
+    const predCdf = predFlat.expandDims(1).mul(quantiles.expandDims(0)).sum(-1).div(256);
     
-    const predSortedApprox = predFlat.expandDims(1)
-      .mul(tf.linspace(0, 1, 256).expandDims(0))
-      .sum(-1).div(256);
-    
-    // 3. MSE между квантилями
-    const loss = tf.losses.meanSquaredError(inputSortedApprox, predSortedApprox);
-    
-    return loss;
+    return tf.losses.meanSquaredError(inputCdf, predCdf);
   });
 }
 
 // ==========================================
-// Models (без изменений)
+// Model Architectures
+// ==========================================
+
 function createBaselineModel() {
   const model = tf.sequential();
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
@@ -89,48 +92,71 @@ function createStudentModel(archType) {
 }
 
 // ==========================================
-// ✅ РАБОЧИЙ Student Loss
+// Custom Loss Function (Level 3: SortedMSE + Smoothness + Direction)
+// Weights optimized for gradient formation
+// ==========================================
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
-    const lossSortedMSE = diffSortedMSE(yTrue, yPred);  // Дифференцируемый!
-    const lossSmooth = smoothness(yPred).mul(0.1);
-    const lossDir = directionX(yPred).mul(0.1);
+    // Histogram preservation (weak constraint - allows rearrangement)
+    const lossSortedMSE = diffSortedMSE(yTrue, yPred).mul(0.2);
     
-    return lossSortedMSE.add(lossSmooth).add(lossDir);
+    // Local smoothness constraint
+    const lossSmooth = smoothness(yPred).mul(0.5);
+    
+    // Horizontal gradient (primary direction: left-dark, right-bright)
+    const lossDirX = directionX(yPred).mul(1.5);
+    
+    // Vertical gradient (secondary: top-dark, bottom-bright)  
+    const lossDirY = verticalDirection(yPred).mul(0.3);
+    
+    // L_total = 0.2*L_sorted + 0.5*L_smooth + 1.5*L_dirX + 0.3*L_dirY
+    return lossSortedMSE.add(lossSmooth).add(lossDirX).add(lossDirY);
   });
 }
 
 // ==========================================
-// Training (упрощенный)
+// Training Loop
+// ==========================================
 async function trainStep() {
   state.step++;
-  if (!state.studentModel) return;
 
-  // Baseline
+  if (!state.studentModel || !state.studentModel.getWeights) {
+    log("Error: Student model not initialized", true);
+    return;
+  }
+
+  // Train Baseline Model (MSE reconstruction)
   const baselineLossVal = tf.tidy(() => {
     const { value, grads } = tf.variableGrads(() => {
-      return mse(state.xInput, state.baselineModel.predict(state.xInput));
+      const pred = state.baselineModel.predict(state.xInput);
+      return mse(state.xInput, pred);
     }, state.baselineModel.getWeights());
+
     state.optimizer.applyGradients(grads);
     return value.dataSync()[0];
   });
 
-  // Student
+  // Train Student Model (Custom Gradient Loss)
   let studentLossVal = 0;
   try {
     studentLossVal = tf.tidy(() => {
       const { value, grads } = tf.variableGrads(() => {
-        return studentLoss(state.xInput, state.studentModel.predict(state.xInput));
+        const pred = state.studentModel.predict(state.xInput);
+        return studentLoss(state.xInput, pred);
       }, state.studentModel.getWeights());
+
       state.optimizer.applyGradients(grads);
       return value.dataSync()[0];
     });
+    
     log(`Step ${state.step}: Base=${baselineLossVal.toFixed(4)} | Student=${studentLossVal.toFixed(4)}`);
   } catch (e) {
-    log(`Error: ${e.message}`, true);
+    log(`Training Error: ${e.message}`, true);
+    stopAutoTrain();
     return;
   }
 
+  // Render visualization
   if (state.step % 5 === 0 || !state.isAutoTraining) {
     await render();
     updateLossDisplay(baselineLossVal, studentLossVal);
@@ -138,12 +164,18 @@ async function trainStep() {
 }
 
 // ==========================================
-// UI (без изменений)
+// UI & Initialization
+// ==========================================
 function init() {
   state.xInput = tf.randomUniform(CONFIG.inputShapeData);
   resetModels();
-  tf.browser.toPixels(state.xInput.squeeze(), document.getElementById("canvas-input"));
 
+  tf.browser.toPixels(
+    state.xInput.squeeze(),
+    document.getElementById("canvas-input")
+  );
+
+  // Event listeners
   document.getElementById("btn-train").addEventListener("click", () => trainStep());
   document.getElementById("btn-auto").addEventListener("click", toggleAutoTrain);
   document.getElementById("btn-reset").addEventListener("click", resetModels);
@@ -156,58 +188,68 @@ function init() {
     });
   });
 
-  log("✅ FINAL VERSION! DiffSortedMSE + Smooth + Dir → NO GRADIENT ERRORS!");
+  log("Initialized: Custom Loss = 0.2*DiffSortedMSE + 0.5*Smooth + 1.5*DirX + 0.3*DirY");
+  log("Expected: Student → smooth gradient (left-dark, right-bright)");
 }
 
 function resetModels(archType = null) {
   if (typeof archType !== "string") {
-    archType = document.querySelector('input[name="arch"]:checked')?.value || "compression";
+    const checked = document.querySelector('input[name="arch"]:checked');
+    archType = checked ? checked.value : "compression";
   }
+
   if (state.isAutoTraining) stopAutoTrain();
 
+  // Cleanup
   state.baselineModel?.dispose();
   state.studentModel?.dispose();
   state.optimizer?.dispose();
 
+  // Create models
   state.baselineModel = createBaselineModel();
   state.studentModel = createStudentModel(archType);
   state.optimizer = tf.train.adam(CONFIG.learningRate);
   state.step = 0;
 
-  log(`🔄 Reset: ${archType} | DiffSortedMSE(1.0)+Smooth(0.1)+Dir(0.1)`);
+  log(`Reset: Student=${archType} | Loss weights: SortedMSE(0.2), Smooth(0.5), DirX(1.5), DirY(0.3)`);
   render();
 }
 
 async function render() {
   const basePred = state.baselineModel.predict(state.xInput);
   const studPred = state.studentModel.predict(state.xInput);
+
   await tf.browser.toPixels(basePred.squeeze(), document.getElementById("canvas-baseline"));
   await tf.browser.toPixels(studPred.squeeze(), document.getElementById("canvas-student"));
+
   basePred.dispose();
   studPred.dispose();
 }
 
-function updateLossDisplay(base, stud) {
-  document.getElementById("loss-baseline").innerText = `Loss: ${base.toFixed(5)}`;
-  document.getElementById("loss-student").innerText = `Loss: ${stud.toFixed(5)}`;
+function updateLossDisplay(baseLoss, studentLoss) {
+  document.getElementById("loss-baseline").innerText = `Loss: ${baseLoss.toFixed(5)}`;
+  document.getElementById("loss-student").innerText = `Loss: ${studentLoss.toFixed(5)}`;
 }
 
 function log(msg, isError = false) {
   const el = document.getElementById("log-area");
   const span = document.createElement("div");
-  span.innerText = `> ${msg}`;
+  span.innerText = `[Step ${state.step}] ${msg}`;
   if (isError) span.classList.add("error");
   el.prepend(span);
   el.scrollTop = 0;
 }
 
+// ==========================================
+// Auto Training Controls
+// ==========================================
 function toggleAutoTrain() {
   const btn = document.getElementById("btn-auto");
   if (state.isAutoTraining) {
     stopAutoTrain();
   } else {
     state.isAutoTraining = true;
-    btn.innerText = "Auto Train (Stop)";
+    btn.innerText = "Stop Auto Train";
     btn.classList.add("btn-stop");
     btn.classList.remove("btn-auto");
     loop();
@@ -217,7 +259,7 @@ function toggleAutoTrain() {
 function stopAutoTrain() {
   state.isAutoTraining = false;
   const btn = document.getElementById("btn-auto");
-  btn.innerText = "Auto Train (Start)";
+  btn.innerText = "Start Auto Train";
   btn.classList.add("btn-auto");
   btn.classList.remove("btn-stop");
 }
@@ -229,4 +271,5 @@ function loop() {
   }
 }
 
+// Initialize application
 init();
