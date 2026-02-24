@@ -1,6 +1,5 @@
 /**
- * Neural Network Design: The Gradient Puzzle
- * FIXED VERSION - All TODOs implemented, TensorFlow.js errors resolved
+ * Neural Network Design: The Gradient Puzzle - ✅ FIXED tf.sort() ERROR
  */
 
 const CONFIG = {
@@ -20,7 +19,7 @@ let state = {
 };
 
 // ==========================================
-// LOSS COMPONENTS (All implemented)
+// LOSS COMPONENTS
 // ==========================================
 
 function mse(yTrue, yPred) {
@@ -28,12 +27,10 @@ function mse(yTrue, yPred) {
 }
 
 function smoothness(yPred) {
-  // X direction differences
   const diffX = yPred
     .slice([0, 0, 0, 0], [-1, -1, 15, -1])
     .sub(yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]));
   
-  // Y direction differences  
   const diffY = yPred
     .slice([0, 0, 0, 0], [-1, 15, -1, -1])
     .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
@@ -47,21 +44,21 @@ function directionX(yPred) {
   return tf.mean(yPred.mul(mask)).mul(-1);
 }
 
-// ✅ FIXED: Sorted MSE - ключ к перестановке пикселей
+// ✅ FIXED: Sorted MSE using tf.topk() instead of tf.sort()
 function sortedMSE(yTrue, yPred) {
   return tf.tidy(() => {
-    // Преобразуем [1,16,16,1] → [256]
+    // Flatten to [256]
     const flatTrue = yTrue.reshape([256]).toFloat();
     const flatPred = yPred.reshape([256]).toFloat();
     
-    // Сортируем тензоры с помощью tf.sort()
-    const sortedTrue = tf.sort(flatTrue);
-    const sortedPred = tf.sort(flatPred);
+    // ✅ CORRECT TF.js: Use topk(k=256) to get ALL values sorted
+    const { values: sortedTrue } = tf.topk(flatTrue, 256, false, 0);  // descending=False
+    const { values: sortedPred } = tf.topk(flatPred, 256, false, 0);
     
-    // MSE между отсортированными значениями
+    // MSE between sorted values
     const loss = tf.losses.meanSquaredError(sortedTrue, sortedPred);
     
-    // Освобождаем память
+    // Cleanup
     flatTrue.dispose();
     flatPred.dispose();
     sortedTrue.dispose();
@@ -72,7 +69,7 @@ function sortedMSE(yTrue, yPred) {
 }
 
 // ==========================================
-// MODEL ARCHITECTURES (All implemented)
+// MODELS
 // ==========================================
 
 function createBaselineModel() {
@@ -89,15 +86,12 @@ function createStudentModel(archType) {
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
 
   if (archType === "compression") {
-    // 256 → 64 → 256 (bottleneck)
     model.add(tf.layers.dense({ units: 64, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else if (archType === "transformation") {
-    // 256 → 256 → 256 (1:1 mapping)
     model.add(tf.layers.dense({ units: 256, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else if (archType === "expansion") {
-    // 256 → 512 → 256 (overcomplete)
     model.add(tf.layers.dense({ units: 512, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   }
@@ -106,21 +100,17 @@ function createStudentModel(archType) {
   return model;
 }
 
-// ==========================================
-// ✅ CUSTOM LOSS FUNCTION (Main innovation)
-// ==========================================
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
-    const lossSorted = sortedMSE(yTrue, yPred).mul(1.0);    // Сохраняем пиксели
-    const lossSmooth = smoothness(yPred).mul(0.1);          // Сглаживаем
-    const lossDir = directionX(yPred).mul(0.2);             // Градиент →→→
-    
+    const lossSorted = sortedMSE(yTrue, yPred).mul(1.0);
+    const lossSmooth = smoothness(yPred).mul(0.1);
+    const lossDir = directionX(yPred).mul(0.2);
     return lossSorted.add(lossSmooth).add(lossDir);
   });
 }
 
 // ==========================================
-// TRAINING LOOP
+// TRAINING
 // ==========================================
 async function trainStep() {
   state.step++;
@@ -130,7 +120,7 @@ async function trainStep() {
     return;
   }
 
-  // Train Baseline (MSE)
+  // Baseline MSE
   const baselineLossVal = tf.tidy(() => {
     const { value, grads } = tf.variableGrads(() => {
       const yPred = state.baselineModel.predict(state.xInput);
@@ -140,7 +130,7 @@ async function trainStep() {
     return value.dataSync()[0];
   });
 
-  // Train Student (Custom Loss)
+  // Student Custom Loss
   let studentLossVal = 0;
   try {
     studentLossVal = tf.tidy(() => {
@@ -164,7 +154,7 @@ async function trainStep() {
 }
 
 // ==========================================
-// UI & INIT
+// UI
 // ==========================================
 function init() {
   state.xInput = tf.randomUniform(CONFIG.inputShapeData);
@@ -184,7 +174,7 @@ function init() {
     });
   });
 
-  log("✅ READY - All TODOs implemented!");
+  log("✅ FIXED - Ready to create gradients!");
 }
 
 function resetModels(archType = null) {
@@ -195,7 +185,6 @@ function resetModels(archType = null) {
 
   if (state.isAutoTraining) stopAutoTrain();
 
-  // Cleanup
   if (state.baselineModel) state.baselineModel.dispose();
   if (state.studentModel) state.studentModel.dispose();
   if (state.optimizer) state.optimizer.dispose();
@@ -205,7 +194,7 @@ function resetModels(archType = null) {
   state.optimizer = tf.train.adam(CONFIG.learningRate);
   state.step = 0;
 
-  log(`🔄 Reset. Student: ${archType}`);
+  log(`🔄 Reset. Arch: ${archType}`);
   render();
 }
 
