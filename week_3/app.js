@@ -42,8 +42,16 @@ function sortedMSE(yTrue, yPred) {
   return tf.tidy(() => {
     const flatTrue = yTrue.reshape([-1]);
     const flatPred = yPred.reshape([-1]);
-    const sortedTrue = tf.sort(flatTrue);
-    const sortedPred = tf.sort(flatPred);
+
+    // Extract values as plain arrays and sort them
+    const trueArr = flatTrue.dataSync();
+    const predArr = flatPred.dataSync();
+    trueArr.sort((a, b) => a - b);
+    predArr.sort((a, b) => a - b);
+
+    const sortedTrue = tf.tensor1d(trueArr);
+    const sortedPred = tf.tensor1d(predArr);
+
     return tf.losses.meanSquaredError(sortedTrue, sortedPred);
   });
 }
