@@ -43,9 +43,18 @@ function sortedMSE(yTrue, yPred) {
     // Flatten to 1D arrays of length 256
     const flatTrue = yTrue.reshape([-1]);
     const flatPred = yPred.reshape([-1]);
-    // Sort in ascending order
-    const sortedTrue = tf.sort(flatTrue, 0);
-    const sortedPred = tf.sort(flatPred, 0);
+
+    // Sort in ascending order using topk (which sorts descending) and then reverse
+    const k = flatTrue.shape[0]; // 256
+
+    // For true values: sort descending via topk, then reverse
+    const { values: descTrue } = tf.topk(flatTrue, k);
+    const sortedTrue = tf.reverse(descTrue, 0);
+
+    // For predicted values
+    const { values: descPred } = tf.topk(flatPred, k);
+    const sortedPred = tf.reverse(descPred, 0);
+
     // MSE between sorted sequences
     return tf.losses.meanSquaredError(sortedTrue, sortedPred);
   });
