@@ -1,11 +1,11 @@
 /**
  * Neural Network Design: The Gradient Puzzle
  *
- * Final Student Version:
- * - Transformation + Expansion architectures implemented
- * - Sorted MSE (Histogram preservation)
+ * FINAL STABLE VERSION
+ * - Proper optimizer usage (no variableGrads)
+ * - Sorted MSE (histogram preservation)
  * - Smoothness (Total Variation)
- * - Direction constraint (Left dark -> Right bright)
+ * - Direction constraint (Left dark → Right bright)
  */
 
 // ==========================================
@@ -14,18 +14,18 @@
 const CONFIG = {
   inputShapeModel: [16, 16, 1],
   inputShapeData: [1, 16, 16, 1],
-  learningRate: 0.05,
+  learningRate: 0.01,
   autoTrainSpeed: 50,
 };
 
 let state = {
   step: 0,
   isAutoTraining: false,
-  autoTrainInterval: null,
   xInput: null,
   baselineModel: null,
   studentModel: null,
-  optimizer: null,
+  baselineOptimizer: null,
+  studentOptimizer: null,
 };
 
 // ==========================================
@@ -37,7 +37,7 @@ function mse(yTrue, yPred) {
   return tf.losses.meanSquaredError(yTrue, yPred);
 }
 
-// Total Variation style smoothness loss
+// Smoothness (Total Variation loss)
 // Penalizes differences between adjacent pixels
 function smoothness(yPred) {
   const diffX = yPred
@@ -51,7 +51,7 @@ function smoothness(yPred) {
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
-// Direction constraint (horizontal gradient)
+// Horizontal direction constraint
 // Encourages left side dark and right side bright
 function directionX(yPred) {
   const width = 16;
@@ -60,10 +60,10 @@ function directionX(yPred) {
 }
 
 // ==========================================
-// 3. Model Architecture
+// 3. Model Architectures
 // ==========================================
 
-// Baseline model: fixed compression autoencoder
+// Baseline: Undercomplete autoencoder
 function createBaselineModel() {
   const model = tf.sequential();
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
@@ -79,17 +79,14 @@ function createStudentModel(archType) {
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
 
   if (archType === "compression") {
-    // Undercomplete bottleneck
     model.add(tf.layers.dense({ units: 64, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
 
   } else if (archType === "transformation") {
-    // 1:1 mapping (same dimensionality)
     model.add(tf.layers.dense({ units: 256, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
 
   } else if (archType === "expansion") {
-    // Overcomplete representation
     model.add(tf.layers.dense({ units: 512, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
 
@@ -108,9 +105,7 @@ function createStudentModel(archType) {
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
 
-    // -----------------------------------
-    // 1. Sorted MSE (Histogram Preservation)
-    // -----------------------------------
+    // ----- Sorted MSE (Histogram Preservation) -----
 
     const flatTrue = yTrue.reshape([256]);
     const flatPred = yPred.reshape([256]);
@@ -120,19 +115,12 @@ function studentLoss(yTrue, yPred) {
 
     const lossSorted = mse(sortedTrue, sortedPred);
 
-    // -----------------------------------
-    // 2. Smoothness (Local consistency)
-    // -----------------------------------
-    const lossSmooth = smoothness(yPred).mul(0.05);
+    // ----- Smoothness -----
+    const lossSmooth = smoothness(yPred).mul(0.1);
 
-    // -----------------------------------
-    // 3. Direction (Global gradient)
-    // -----------------------------------
-    const lossDir = directionX(yPred).mul(0.1);
+    // ----- Direction -----
+    const lossDir = directionX(yPred).mul(0.2);
 
-    // -----------------------------------
-    // Total Combined Loss
-    // -----------------------------------
     return lossSorted
       .add(lossSmooth)
       .add(lossDir);
@@ -140,56 +128,51 @@ function studentLoss(yTrue, yPred) {
 }
 
 // ==========================================
-// 5. Training Loop
+// 5. Training Step
 // ==========================================
 
 async function trainStep() {
   state.step++;
 
-  if (!state.studentModel) {
-    log("Error: Student model not initialized.", true);
-    stopAutoTrain();
-    return;
-  }
-
-  // Baseline training (MSE only)
-  const baselineLossVal = tf.tidy(() => {
-    const { value, grads } = tf.variableGrads(() => {
+  // ---- Baseline Training ----
+  const baselineLossTensor = state.baselineOptimizer.minimize(() => {
+    return tf.tidy(() => {
       const yPred = state.baselineModel.predict(state.xInput);
       return mse(state.xInput, yPred);
-    }, state.baselineModel.getWeights());
+    });
+  }, true, state.baselineModel.trainableVariables);
 
-    state.optimizer.applyGradients(grads);
-    return value.dataSync()[0];
-  });
+  const baselineLoss = baselineLossTensor.dataSync()[0];
+  baselineLossTensor.dispose();
 
-  // Student training (Custom loss)
-  const studentLossVal = tf.tidy(() => {
-    const { value, grads } = tf.variableGrads(() => {
+  // ---- Student Training ----
+  const studentLossTensor = state.studentOptimizer.minimize(() => {
+    return tf.tidy(() => {
       const yPred = state.studentModel.predict(state.xInput);
       return studentLoss(state.xInput, yPred);
-    }, state.studentModel.getWeights());
+    });
+  }, true, state.studentModel.trainableVariables);
 
-    state.optimizer.applyGradients(grads);
-    return value.dataSync()[0];
-  });
+  const studentLossValue = studentLossTensor.dataSync()[0];
+  studentLossTensor.dispose();
 
   log(
-    `Step ${state.step}: Base=${baselineLossVal.toFixed(4)} | Student=${studentLossVal.toFixed(4)}`
+    `Step ${state.step}: Base=${baselineLoss.toFixed(4)} | Student=${studentLossValue.toFixed(4)}`
   );
 
   if (state.step % 5 === 0 || !state.isAutoTraining) {
     await render();
-    updateLossDisplay(baselineLossVal, studentLossVal);
+    updateLossDisplay(baselineLoss, studentLossValue);
   }
 }
 
 // ==========================================
-// 6. Initialization & UI
+// 6. UI & Initialization
 // ==========================================
 
 function init() {
   state.xInput = tf.randomUniform(CONFIG.inputShapeData);
+
   resetModels();
 
   tf.browser.toPixels(
@@ -221,22 +204,22 @@ function init() {
 }
 
 function resetModels(archType = null) {
-  if (typeof archType !== "string") archType = null;
-
-  if (state.isAutoTraining) stopAutoTrain();
-
-  if (!archType) {
+  if (typeof archType !== "string") {
     const checked = document.querySelector('input[name="arch"]:checked');
     archType = checked ? checked.value : "compression";
   }
 
+  if (state.isAutoTraining) stopAutoTrain();
+
   if (state.baselineModel) state.baselineModel.dispose();
   if (state.studentModel) state.studentModel.dispose();
-  if (state.optimizer) state.optimizer.dispose();
 
   state.baselineModel = createBaselineModel();
   state.studentModel = createStudentModel(archType);
-  state.optimizer = tf.train.adam(CONFIG.learningRate);
+
+  state.baselineOptimizer = tf.train.adam(CONFIG.learningRate);
+  state.studentOptimizer = tf.train.adam(CONFIG.learningRate);
+
   state.step = 0;
 
   log(`Models reset. Student Arch: ${archType}`);
