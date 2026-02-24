@@ -1,11 +1,11 @@
 /**
- * Neural Network Design: The Gradient Puzzle - 16 VERTICAL STRIPS FIXED
+ * Neural Network Design: The Gradient Puzzle - DEBUG VERSION
  */
 
 const CONFIG = {
   inputShapeModel: [16, 16, 1],
   inputShapeData: [1, 16, 16, 1],
-  learningRate: 0.02,
+  learningRate: 0.03,
   autoTrainSpeed: 50,
 };
 
@@ -20,47 +20,51 @@ let state = {
 };
 
 // ==========================================
-// LOSS FUNCTIONS - ТОЧНЫЙ ГРАДИЕНТ 16 ПОЛОС
+// LOSS FUNCTIONS
 // ==========================================
-
 function mse(yTrue, yPred) {
   return tf.losses.meanSquaredError(yTrue, yPred);
 }
 
-// ✅ МАСКА: колонка 0=-1.0 → колонка 15=+1.0 (16 четких полос)
-function createGradientMask() {
-  const values = tf.tensor1d([
-    -1.00, -0.94, -0.88, -0.82, -0.76, -0.70, -0.64, -0.58,
-    -0.52, -0.46, -0.40, -0.34, -0.28, -0.22, -0.16,  0.00
-  ]).add(tf.tensor1d([0,0,0,0,0,0,0,0, 0.3,0.36,0.42,0.48,0.54,0.60,0.66,1.00]));
-  return values.reshape([1, 1, 16, 1]);
+function smoothness(yPred) {
+  const diffX = yPred.slice([0,0,0,0], [-1,-1,15,-1]).sub(yPred.slice([0,0,1,0], [-1,-1,15,-1]));
+  const diffY = yPred.slice([0,0,0,0], [-1,15,-1,-1]).sub(yPred.slice([0,1,0,0], [-1,15,-1,-1]));
+  return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
 function directionX(yPred) {
-  const mask = createGradientMask();
-  const correlation = tf.mean(yPred.mul(mask));
-  mask.dispose();
-  return correlation.mul(-5.0); // Максимизируем градиент
+  const mask = tf.linspace(0, 1, 16).reshape([1, 1, 16, 1]);
+  return tf.mean(yPred.mul(mask)).mul(-1);
 }
 
-function smoothnessVertical(yPred) {
-  const diffY = yPred.slice([0,0,0,0], [-1,15,-1,-1]).sub(
-    yPred.slice([0,1,0,0], [-1,15,-1,-1])
-  );
-  return tf.mean(tf.square(diffY)).mul(0.3);
-}
-
-function preserveEnergy(yPred) {
-  const meanPred = tf.mean(yPred);
-  return tf.square(meanPred.sub(0.5)).mul(0.1);
+function histogramLoss(yTrue, yPred) {
+  return tf.tidy(() => {
+    const flatTrue = yTrue.reshape([256]);
+    const flatPred = yPred.reshape([256]);
+    const meanTrue = tf.mean(flatTrue);
+    const meanPred = tf.mean(flatPred);
+    const lossMean = tf.square(meanTrue.sub(meanPred));
+    const varTrue = tf.mean(tf.square(flatTrue.sub(meanTrue)));
+    const varPred = tf.mean(tf.square(flatPred.sub(meanPred)));
+    const lossVar = tf.square(varTrue.sub(varPred));
+    const loss = lossMean.add(lossVar.mul(0.5));
+    
+    flatTrue.dispose();
+    flatPred.dispose();
+    meanTrue.dispose();
+    meanPred.dispose();
+    varTrue.dispose();
+    varPred.dispose();
+    return loss;
+  });
 }
 
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
-    const lossDir = directionX(yPred);           // 70% веса - ГЛАВНЫЙ
-    const lossSmooth = smoothnessVertical(yPred); // 25% веса
-    const lossEnergy = preserveEnergy(yPred);     // 5% веса
-    return lossDir.add(lossSmooth).add(lossEnergy);
+    const lossHist = histogramLoss(yTrue, yPred).mul(2.0);
+    const lossSmooth = smoothness(yPred).mul(0.1);
+    const lossDir = directionX(yPred).mul(1.0);
+    return lossHist.add(lossSmooth).add(lossDir);
   });
 }
 
@@ -96,58 +100,61 @@ function createStudentModel(archType) {
 }
 
 // ==========================================
-// ✅ РАБОТАЮЩИЙ TRAINING STEP
+// TRAINING STEP
 // ==========================================
 async function trainStep() {
+  log(`🔄 Training step ${state.step + 1}...`);
+  
   state.step++;
 
-  // ✅ Baseline: копирует вход
-  const baselineLoss = tf.tidy(() => {
-    const pred = state.baselineModel.predict(state.xInput);
-    const loss = mse(state.xInput, pred);
-    const { grads } = tf.variableGrads(loss, state.baselineModel.getWeights());
+  // Baseline training
+  const baselineLossVal = tf.tidy(() => {
+    const { value, grads } = tf.variableGrads(() => {
+      return mse(state.xInput, state.baselineModel.predict(state.xInput));
+    }, state.baselineModel.getWeights());
     state.baselineOptimizer.applyGradients(grads);
-    pred.dispose();
-    return loss.dataSync()[0];
+    return value.dataSync()[0];
   });
 
-  // ✅ Student: создает градиент
-  const studentLoss = tf.tidy(() => {
-    const pred = state.studentModel.predict(state.xInput);
-    const loss = studentLoss(state.xInput, pred);
-    const { grads } = tf.variableGrads(loss, state.studentModel.getWeights());
-    state.studentOptimizer.applyGradients(grads);
-    pred.dispose();
-    return loss.dataSync()[0];
-  });
-
-  // ✅ Render каждые 5 шагов + логи каждые 20
-  if (state.step % 5 === 0) {
-    await render();
+  // Student training
+  let studentLossVal = 0;
+  try {
+    studentLossVal = tf.tidy(() => {
+      const { value, grads } = tf.variableGrads(() => {
+        return studentLoss(state.xInput, state.studentModel.predict(state.xInput));
+      }, state.studentModel.getWeights());
+      state.studentOptimizer.applyGradients(grads);
+      return value.dataSync()[0];
+    });
+  } catch (e) {
+    log(`❌ Student Error: ${e.message}`, true);
+    return;
   }
+
+  log(`✅ Step ${state.step}: Base=${baselineLossVal.toFixed(4)} | Student=${studentLossVal.toFixed(4)}`);
   
-  if (state.step % 20 === 0 || state.step <= 5) {
-    log(`Step ${state.step}: Base=${baselineLoss.toFixed(4)} | Student=${studentLoss.toFixed(4)}`);
-    updateLossDisplay(baselineLoss, studentLoss);
-  }
+  await render();
+  updateLossDisplay(baselineLossVal, studentLossVal);
 }
 
 // ==========================================
 // RENDER
 // ==========================================
 async function render() {
+  log("🎨 Rendering...");
   const basePred = state.baselineModel.predict(state.xInput);
   const studPred = state.studentModel.predict(state.xInput);
-  
+
   await tf.browser.toPixels(basePred.squeeze(), document.getElementById("canvas-baseline"));
   await tf.browser.toPixels(studPred.squeeze(), document.getElementById("canvas-student"));
-  
+
   basePred.dispose();
   studPred.dispose();
+  log("✅ Render complete");
 }
 
 // ==========================================
-// UI
+// UI UPDATES
 // ==========================================
 function updateLossDisplay(base, stud) {
   document.getElementById("loss-baseline").innerText = `Loss: ${base.toFixed(5)}`;
@@ -163,22 +170,30 @@ function log(msg, isError = false) {
   el.scrollTop = 0;
 }
 
+// ==========================================
+// UI EVENT HANDLERS
+// ==========================================
 function toggleAutoTrain() {
   const btn = document.getElementById("btn-auto");
   if (state.isAutoTraining) {
-    state.isAutoTraining = false;
-    btn.innerText = "Auto Train (Start)";
-    btn.classList.add("btn-auto");
-    btn.classList.remove("btn-stop");
-    log("⏹️ Auto STOPPED");
+    stopAutoTrain();
   } else {
     state.isAutoTraining = true;
     btn.innerText = "Auto Train (Stop)";
     btn.classList.add("btn-stop");
     btn.classList.remove("btn-auto");
-    log("🚀 Auto STARTED → 16 strips!");
+    log("🚀 Auto training STARTED");
     loop();
   }
+}
+
+function stopAutoTrain() {
+  state.isAutoTraining = false;
+  const btn = document.getElementById("btn-auto");
+  btn.innerText = "Auto Train (Start)";
+  btn.classList.add("btn-auto");
+  btn.classList.remove("btn-stop");
+  log("⏹️ Auto training STOPPED");
 }
 
 function loop() {
@@ -188,60 +203,99 @@ function loop() {
   }
 }
 
+// ==========================================
+// RESET MODELS
+// ==========================================
 function resetModels(archType = null) {
-  if (!archType) {
+  log("🔄 Resetting models...");
+  
+  if (typeof archType !== "string") {
     const checked = document.querySelector('input[name="arch"]:checked');
     archType = checked ? checked.value : "compression";
   }
 
-  // Stop auto train
-  state.isAutoTraining = false;
-  const btn = document.getElementById("btn-auto");
-  if (btn) {
-    btn.innerText = "Auto Train (Start)";
-    btn.classList.add("btn-auto");
-    btn.classList.remove("btn-stop");
-  }
+  if (state.isAutoTraining) stopAutoTrain();
 
   // Cleanup
-  [state.baselineModel, state.studentModel, state.baselineOptimizer, state.studentOptimizer]
-    .forEach(model => model?.dispose());
+  if (state.baselineModel) state.baselineModel.dispose();
+  if (state.studentModel) state.studentModel.dispose();
+  if (state.baselineOptimizer) state.baselineOptimizer.dispose();
+  if (state.studentOptimizer) state.studentOptimizer.dispose();
 
-  // New models
+  // Create new models
   state.baselineModel = createBaselineModel();
   state.studentModel = createStudentModel(archType);
   state.baselineOptimizer = tf.train.adam(CONFIG.learningRate);
   state.studentOptimizer = tf.train.adam(CONFIG.learningRate);
   state.step = 0;
 
-  log(`🔄 Reset: ${archType}`);
-  render().then(() => updateLossDisplay(0, 0));
+  log(`✅ Models reset. Arch: ${archType}`);
+  render();
 }
 
 // ==========================================
-// INIT
+// MAIN INIT
 // ==========================================
 async function init() {
-  await tf.ready();
+  log("🚀 Initializing TensorFlow.js...");
   
-  state.xInput = tf.randomUniform(CONFIG.inputShapeData, 0, 1);
-  tf.browser.toPixels(state.xInput.squeeze(), document.getElementById("canvas-input"));
-
-  // ✅ Event listeners - гарантированно работают
-  document.getElementById("btn-train").onclick = trainStep;
-  document.getElementById("btn-auto").onclick = toggleAutoTrain;
-  document.getElementById("btn-reset").onclick = resetModels;
-
-  document.querySelectorAll('input[name="arch"]').forEach(radio => {
-    radio.onchange = () => {
-      resetModels(radio.value);
-      document.getElementById("student-arch-label").textContent = 
-        radio.value.charAt(0).toUpperCase() + radio.value.slice(1);
-    };
-  });
-
+  // Wait for TF.js to be ready
+  await tf.ready();
+  log("✅ TensorFlow.js ready!");
+  
+  // Create input
+  state.xInput = tf.randomUniform(CONFIG.inputShapeData);
+  log("✅ Input noise created");
+  
+  // Initial models
   resetModels();
-  log("🎯 16 STRIPS READY! Train 1 Step работает!");
+  
+  // Render input
+  tf.browser.toPixels(state.xInput.squeeze(), document.getElementById("canvas-input"));
+  log("✅ Input rendered");
+
+  // ✅ DEBUG: Check if DOM elements exist
+  const btnTrain = document.getElementById("btn-train");
+  const btnAuto = document.getElementById("btn-auto");
+  const btnReset = document.getElementById("btn-reset");
+  
+  log(`DOM check: train=${!!btnTrain}, auto=${!!btnAuto}, reset=${!!btnReset}`);
+
+  // Event listeners
+  if (btnTrain) {
+    btnTrain.addEventListener("click", () => {
+      log("🔘 Train button clicked!");
+      trainStep();
+    });
+    log("✅ Train button bound");
+  }
+
+  if (btnAuto) {
+    btnAuto.addEventListener("click", toggleAutoTrain);
+    log("✅ Auto button bound");
+  }
+
+  if (btnReset) {
+    btnReset.addEventListener("click", () => {
+      log("🔄 Reset button clicked!");
+      resetModels();
+    });
+    log("✅ Reset button bound");
+  }
+
+  // Architecture selector
+  document.querySelectorAll('input[name="arch"]').forEach((radio) => {
+    radio.addEventListener("change", (e) => {
+      log(`📡 Arch changed to: ${e.target.value}`);
+      resetModels(e.target.value);
+      document.getElementById("student-arch-label").innerText =
+        e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1);
+    });
+  });
+  log("✅ Arch selector bound");
+
+  log("🎉 READY TO TRAIN! Click 'Train 1 Step' or 'Auto Train'");
 }
 
+// Start when page loads
 init();
