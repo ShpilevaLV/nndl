@@ -36,7 +36,7 @@ function mse(yTrue, yPred) {
 
 /**
  * Sorted MSE: compares sorted pixel values.
- * Uses topk + stopGradient to avoid gradient issues with non-differentiable sorting.
+ * Uses topk + .stopGradient() to avoid gradient issues with non-differentiable sorting.
  */
 function sortedMSE(yTrue, yPred) {
   return tf.tidy(() => {
@@ -44,14 +44,14 @@ function sortedMSE(yTrue, yPred) {
     const flatPred = yPred.reshape([-1]);
     const k = flatTrue.shape[0]; // 256
 
-    // Get sorting indices for prediction (detach to avoid gradient through topk)
+    // Get sorting indices for prediction (detach gradient by calling .stopGradient())
     const { indices: predIndices } = tf.topk(flatPred, k);
-    const predIndicesDetached = tf.stopGradient(predIndices);
+    const predIndicesDetached = predIndices.stopGradient();
     const sortedPred = tf.gather(flatPred, predIndicesDetached);
 
-    // For true values, we can also detach (true is constant, but safe)
+    // For true values, also detach (though true is constant, but safe)
     const { indices: trueIndices } = tf.topk(flatTrue, k);
-    const trueIndicesDetached = tf.stopGradient(trueIndices);
+    const trueIndicesDetached = trueIndices.stopGradient();
     const sortedTrue = tf.gather(flatTrue, trueIndicesDetached);
 
     return tf.losses.meanSquaredError(sortedTrue, sortedPred);
@@ -59,12 +59,17 @@ function sortedMSE(yTrue, yPred) {
 }
 
 function smoothness(yPred) {
+  // Difference in X direction: pixel[i, j] - pixel[i, j+1]
   const diffX = yPred
     .slice([0, 0, 0, 0], [-1, -1, 15, -1])
     .sub(yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]));
+
+  // Difference in Y direction: pixel[i, j] - pixel[i+1, j]
   const diffY = yPred
     .slice([0, 0, 0, 0], [-1, 15, -1, -1])
     .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
+
+  // Return sum of squares
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
@@ -117,10 +122,10 @@ function studentLoss(yTrue, yPred) {
     // Sorted MSE — allows pixel rearrangement
     const lossSortedMSE = sortedMSE(yTrue, yPred);
 
-    // Smoothness — encourages local consistency
+    // Smoothness — encourage local consistency
     const lossSmooth = smoothness(yPred).mul(0.1);
 
-    // Direction — makes right side brighter
+    // Direction — make right side brighter
     const lossDir = directionX(yPred).mul(0.1);
 
     return lossSortedMSE.add(lossSmooth).add(lossDir);
@@ -128,7 +133,7 @@ function studentLoss(yTrue, yPred) {
 }
 
 // ==========================================
-// 5. Training Loop (unchanged)
+// 5. Training Loop
 // ==========================================
 
 async function trainStep() {
@@ -140,6 +145,7 @@ async function trainStep() {
     return;
   }
 
+  // Train Baseline (MSE Only)
   const baselineLossVal = tf.tidy(() => {
     const { value, grads } = tf.variableGrads(() => {
       const yPred = state.baselineModel.predict(state.xInput);
@@ -149,6 +155,7 @@ async function trainStep() {
     return value.dataSync()[0];
   });
 
+  // Train Student (Custom Loss)
   let studentLossVal = 0;
   try {
     studentLossVal = tf.tidy(() => {
@@ -173,7 +180,7 @@ async function trainStep() {
 }
 
 // ==========================================
-// 6. UI & Initialization logic (unchanged)
+// 6. UI & Initialization
 // ==========================================
 
 function init() {
