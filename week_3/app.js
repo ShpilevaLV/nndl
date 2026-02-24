@@ -37,27 +37,26 @@ function mse(yTrue, yPred) {
   return tf.losses.meanSquaredError(yTrue, yPred);
 }
 
-// Sorted MSE: compare sorted pixel values (preserves histogram)
+// Sorted MSE using topk (avoids tf.sort which is missing in some TF.js versions)
 function sortedMSE(yTrue, yPred) {
   return tf.tidy(() => {
     const flatTrue = yTrue.reshape([-1]);
     const flatPred = yPred.reshape([-1]);
+    const k = flatTrue.shape[0];
 
-    // Extract values as plain arrays and sort them
-    const trueArr = flatTrue.dataSync();
-    const predArr = flatPred.dataSync();
-    trueArr.sort((a, b) => a - b);
-    predArr.sort((a, b) => a - b);
+    // topk sorts in descending order, so we reverse to get ascending
+    const { values: descTrue } = tf.topk(flatTrue, k);
+    const { values: descPred } = tf.topk(flatPred, k);
+    const ascTrue = tf.reverse(descTrue);
+    const ascPred = tf.reverse(descPred);
 
-    const sortedTrue = tf.tensor1d(trueArr);
-    const sortedPred = tf.tensor1d(predArr);
-
-    return tf.losses.meanSquaredError(sortedTrue, sortedPred);
+    return tf.losses.meanSquaredError(ascTrue, ascPred);
   });
 }
 
 // Smoothness (Total Variation) – penalizes large differences between adjacent pixels
 function smoothness(yPred) {
+  // yPred shape: [1,16,16,1]
   // Difference in X direction: pixel[i, j] - pixel[i, j+1]
   const diffX = yPred
     .slice([0, 0, 0, 0], [-1, -1, 15, -1])
@@ -68,7 +67,7 @@ function smoothness(yPred) {
     .slice([0, 0, 0, 0], [-1, 15, -1, -1])
     .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
 
-  // Return sum of squares
+  // Return mean of squares
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
@@ -76,7 +75,8 @@ function smoothness(yPred) {
 function directionX(yPred) {
   // Create a weight mask that increases from left (-1) to right (+1)
   const width = 16;
-  const mask = tf.linspace(-1, 1, width).reshape([1, 1, width, 1]); // [1, 1, 16, 1]
+  // mask shape: [1, 1, width, 1] – broadcastable to [1,16,16,1]
+  const mask = tf.linspace(-1, 1, width).reshape([1, 1, width, 1]);
 
   // We want yPred to correlate with mask.
   // Maximize (yPred * mask) => Minimize -(yPred * mask)
@@ -94,25 +94,23 @@ function createBaselineModel() {
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
   model.add(tf.layers.dense({ units: 64, activation: "relu" })); // Bottleneck
   model.add(tf.layers.dense({ units: 256, activation: "sigmoid" })); // Output 0-1
-  // Reshape back to [16, 16, 1] (batch dim is handled automatically)
   model.add(tf.layers.reshape({ targetShape: [16, 16, 1] }));
   return model;
 }
 
 // ------------------------------------------------------------------
-// [TODO-A]: STUDENT ARCHITECTURE DESIGN
-// Now fully implemented for all three types.
+// STUDENT ARCHITECTURE DESIGN – fully implemented for all three types
 // ------------------------------------------------------------------
 function createStudentModel(archType) {
   const model = tf.sequential();
   model.add(tf.layers.flatten({ inputShape: CONFIG.inputShapeModel }));
 
   if (archType === "compression") {
-    // Bottleneck: Compress information
+    // Bottleneck: compress information
     model.add(tf.layers.dense({ units: 64, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else if (archType === "transformation") {
-    // Transformation: keep dimension approximately equal to input (256)
+    // Transformation: keep dimension ≈ input size (256)
     model.add(tf.layers.dense({ units: 256, activation: "relu" }));
     model.add(tf.layers.dense({ units: 256, activation: "sigmoid" }));
   } else if (archType === "expansion") {
@@ -132,8 +130,7 @@ function createStudentModel(archType) {
 // ==========================================
 
 // ------------------------------------------------------------------
-// [TODO-B]: STUDENT LOSS DESIGN
-// Now combines sorted MSE, smoothness, and direction.
+// STUDENT LOSS DESIGN – combines sorted MSE, smoothness, and direction
 // ------------------------------------------------------------------
 function studentLoss(yTrue, yPred) {
   return tf.tidy(() => {
@@ -197,7 +194,7 @@ async function trainStep() {
     return;
   }
 
-  // Visualize
+  // Visualize every 5 steps or when not auto-training
   if (state.step % 5 === 0 || !state.isAutoTraining) {
     await render();
     updateLossDisplay(baselineLossVal, studentLossVal);
@@ -242,12 +239,12 @@ function init() {
 }
 
 function resetModels(archType = null) {
-  // [Fix]: When called via event listener, archType is an Event object.
+  // When called via event listener, archType might be an Event object
   if (typeof archType !== "string") {
     archType = null;
   }
 
-  // Safety: Stop auto-training to prevent race conditions during reset
+  // Stop auto-training to prevent race conditions during reset
   if (state.isAutoTraining) {
     stopAutoTrain();
   }
