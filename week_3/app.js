@@ -6,8 +6,6 @@
  * random noise input into a smooth, directional gradient output.
  */
 
-// ... (CONFIG и state остаются без изменений)
-
 // ==========================================
 // 2. Helper Functions (Loss Components)
 // ==========================================
@@ -303,3 +301,4 @@ function loop() {
 
 // Start
 init();
+
