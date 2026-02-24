@@ -1,9 +1,5 @@
 /**
  * Neural Network Design: The Gradient Puzzle
- *
- * Objective:
- * Modify the Student Model architecture and loss function to transform
- * random noise input into a smooth, directional gradient output.
  */
 
 // ==========================================
@@ -36,7 +32,7 @@ function mse(yTrue, yPred) {
 
 /**
  * Sorted MSE: compares sorted pixel values.
- * Uses topk + .stopGradient() to avoid gradient issues with non-differentiable sorting.
+ * Uses tf.topk + tf.stopGradient to avoid gradient issues.
  */
 function sortedMSE(yTrue, yPred) {
   return tf.tidy(() => {
@@ -44,14 +40,14 @@ function sortedMSE(yTrue, yPred) {
     const flatPred = yPred.reshape([-1]);
     const k = flatTrue.shape[0]; // 256
 
-    // Get sorting indices for prediction (detach gradient by calling .stopGradient())
+    // Get sorting indices for prediction (detach gradient with tf.stopGradient)
     const { indices: predIndices } = tf.topk(flatPred, k);
-    const predIndicesDetached = predIndices.stopGradient();
+    const predIndicesDetached = tf.stopGradient(predIndices);
     const sortedPred = tf.gather(flatPred, predIndicesDetached);
 
-    // For true values, also detach (though true is constant, but safe)
+    // For true values, also detach (though true is constant)
     const { indices: trueIndices } = tf.topk(flatTrue, k);
-    const trueIndicesDetached = trueIndices.stopGradient();
+    const trueIndicesDetached = tf.stopGradient(trueIndices);
     const sortedTrue = tf.gather(flatTrue, trueIndicesDetached);
 
     return tf.losses.meanSquaredError(sortedTrue, sortedPred);
@@ -59,17 +55,12 @@ function sortedMSE(yTrue, yPred) {
 }
 
 function smoothness(yPred) {
-  // Difference in X direction: pixel[i, j] - pixel[i, j+1]
   const diffX = yPred
     .slice([0, 0, 0, 0], [-1, -1, 15, -1])
     .sub(yPred.slice([0, 0, 1, 0], [-1, -1, 15, -1]));
-
-  // Difference in Y direction: pixel[i, j] - pixel[i+1, j]
   const diffY = yPred
     .slice([0, 0, 0, 0], [-1, 15, -1, -1])
     .sub(yPred.slice([0, 1, 0, 0], [-1, 15, -1, -1]));
-
-  // Return sum of squares
   return tf.mean(tf.square(diffX)).add(tf.mean(tf.square(diffY)));
 }
 
@@ -145,7 +136,6 @@ async function trainStep() {
     return;
   }
 
-  // Train Baseline (MSE Only)
   const baselineLossVal = tf.tidy(() => {
     const { value, grads } = tf.variableGrads(() => {
       const yPred = state.baselineModel.predict(state.xInput);
@@ -155,7 +145,6 @@ async function trainStep() {
     return value.dataSync()[0];
   });
 
-  // Train Student (Custom Loss)
   let studentLossVal = 0;
   try {
     studentLossVal = tf.tidy(() => {
